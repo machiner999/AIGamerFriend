@@ -1,49 +1,46 @@
-# AIGamerFriend
+# CLAUDE.md
 
-カメラでTVに映るゲーム画面を撮影し、カジュアルな友達のようにリアクション・アドバイスしてくれるAIゲーマー友達Androidアプリ。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 技術スタック
+## What This Is
 
-- **言語**: Kotlin
-- **UI**: Jetpack Compose + Material 3 (ダークテーマ)
-- **AI**: Firebase AI Logic SDK (`firebase-ai`) → Gemini Multimodal Live API
-- **カメラ**: CameraX 1.5.0-alpha06
-- **ビルド**: Gradle 8.11.1, AGP 8.7.3, Kotlin 2.1.0
-- **最小SDK**: 26 / **ターゲットSDK**: 35
+Android app that watches game screens via the device's back camera and reacts like a casual gaming friend using voice. Uses Gemini Multimodal Live API through Firebase AI Logic SDK for real-time bidirectional audio+video streaming.
 
-## プロジェクト構成
-
-```
-app/src/main/java/com/example/aigamerfriend/
-├── AIGamerFriendApp.kt          # Applicationクラス
-├── MainActivity.kt              # エントリポイント
-├── ui/
-│   ├── theme/ (Color, Theme, Type)  # ゲーミング向けダークテーマ
-│   ├── screen/GamerScreen.kt       # メイン画面（カメラ70% + コントロール30%）
-│   └── component/
-│       ├── CameraPreview.kt        # CameraX + 1FPSフレームキャプチャ
-│       └── StatusOverlay.kt        # LIVE/再接続中/エラー インジケータ
-├── viewmodel/GamerViewModel.kt     # コアロジック（セッション管理・映像送信・再接続）
-└── util/PermissionHelper.kt        # CAMERA + RECORD_AUDIO パーミッション
-```
-
-## 重要な制約
-
-- Gemini Live APIセッションは**2分制限** → 1分50秒で自動再接続
-- 映像送信は**1FPS**（`SnapshotFrameAnalyzer`でスロットリング）
-- Firebase AI Logic SDKはセッション再開(session resumption)未サポート
-- `@OptIn(PublicPreviewAPI::class)` が必要（Firebase AI Live API）
-
-## ビルド・実行
+## Build Commands
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug       # Debug build
+./gradlew assembleRelease     # Release build
+./gradlew clean               # Clean build artifacts
 ```
 
-**事前準備**: Firebase Consoleでプロジェクト作成し、`app/google-services.json`を配置すること（`.gitignore`済み）。
+No tests are configured yet. No linter is configured yet.
 
-## コーディング規約
+## Prerequisites
 
-- 日本語コメントは最小限（コード自体が説明的であること）
-- システムプロンプトは日本語（ユーザーとの会話言語）
-- Compose UI → `collectAsStateWithLifecycle` でStateFlow収集
+A real `app/google-services.json` from Firebase Console is required (the placeholder in the repo won't connect to Gemini). It is gitignored.
+
+## Architecture
+
+Single-screen app with one ViewModel. No navigation, no database, no repository layer.
+
+**Data flow**: `CameraPreview` captures frames at 1FPS → `GamerViewModel.sendVideoFrame()` compresses to JPEG and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation()` which handles mic input and speaker output automatically.
+
+**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, the system prompt is re-sent so character is preserved, but conversation context is lost. On network errors, retries up to 3 times with linear backoff.
+
+**State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
+
+**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`.
+
+## Key Constraints
+
+- Session auto-reconnects at 1:50 — do not extend `SESSION_DURATION_MS` beyond 120_000
+- Frame rate is throttled in `SnapshotFrameAnalyzer.captureIntervalMs` — keep at 1000ms or higher
+- System prompt is in Japanese (the AI character speaks Japanese)
+- `app/google-services.json` must never be committed (contains API keys)
+
+## Conventions
+
+- UI strings are hardcoded in Japanese (no string resources for now)
+- StateFlow collected with `collectAsStateWithLifecycle` in Compose
+- JVM toolchain 17

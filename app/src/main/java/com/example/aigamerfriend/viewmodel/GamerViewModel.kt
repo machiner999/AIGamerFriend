@@ -10,6 +10,7 @@ import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.InlineData
 import com.google.firebase.ai.type.LiveSession
 import com.google.firebase.ai.type.PublicPreviewAPI
+import com.google.firebase.ai.type.Tool
 import com.google.firebase.ai.type.ResponseModality
 import com.google.firebase.ai.type.SpeechConfig
 import com.google.firebase.ai.type.Voice
@@ -61,6 +62,8 @@ class GamerViewModel : ViewModel() {
 - 「何かお手伝いできますか？」のような丁寧表現は禁止
 - 映像が見えにくい場合は「ちょっと見えにくいな」と自然に言う
 - 日本語で話す
+- ユーザーがボスの倒し方、攻略法、アイテムの場所、ストーリーの進め方などを聞いてきたら、Google検索を使って最新の攻略情報を調べてから答える
+- 検索結果を元に答える時も、友達っぽく自然に「あー、確かあれはさ...」のように話す
     """.trimIndent()
 
     private val liveModel by lazy {
@@ -70,6 +73,7 @@ class GamerViewModel : ViewModel() {
                 responseModality = ResponseModality.AUDIO
                 speechConfig = SpeechConfig(voice = Voice("AOEDE"))
             },
+            tools = listOf(Tool.googleSearch()),
             systemInstruction = content { text(systemPrompt) }
         )
     }
