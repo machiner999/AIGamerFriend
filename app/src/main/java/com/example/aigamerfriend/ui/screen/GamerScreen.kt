@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.aigamerfriend.ui.component.AIFace
 import com.example.aigamerfriend.ui.component.CameraPreview
 import com.example.aigamerfriend.ui.component.StatusOverlay
 import com.example.aigamerfriend.util.PermissionHelper
@@ -43,6 +46,7 @@ import com.example.aigamerfriend.viewmodel.SessionState
 fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val context = LocalContext.current
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
+    val currentEmotion by viewModel.currentEmotion.collectAsStateWithLifecycle()
     var hasPermissions by remember { mutableStateOf(PermissionHelper.hasAllPermissions(context)) }
 
     val permissionLauncher =
@@ -83,6 +87,18 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
                             .align(Alignment.TopStart)
                             .padding(16.dp),
                 )
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = sessionState is SessionState.Connected,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                ) {
+                    AIFace(
+                        emotion = currentEmotion,
+                        modifier = Modifier.padding(bottom = 16.dp),
+                    )
+                }
             }
 
             // Control area (30%)

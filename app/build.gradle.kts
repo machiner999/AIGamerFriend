@@ -52,6 +52,9 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
     implementation("com.google.firebase:firebase-ai")
 
+    // Kotlinx Serialization JSON (required for Firebase AI function calling types)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+
     // Compose
     implementation(platform("androidx.compose:compose-bom:2025.01.01"))
     implementation("androidx.compose.ui:ui")

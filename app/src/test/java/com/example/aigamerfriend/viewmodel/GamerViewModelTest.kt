@@ -1,7 +1,10 @@
 package com.example.aigamerfriend.viewmodel
 
+import com.example.aigamerfriend.model.Emotion
+import com.google.firebase.ai.type.FunctionCallPart
 import com.google.firebase.ai.type.InlineData
 import io.mockk.mockk
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -201,4 +204,59 @@ class GamerViewModelTest {
             assertEquals(SessionState.Connected, viewModel.sessionState.value)
             assertEquals(2, connectCallCount)
         }
+
+    @Test
+    fun `initial emotion is NEUTRAL`() {
+        assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
+    }
+
+    @Test
+    fun `stopSession resets emotion to NEUTRAL`() =
+        viewModelTest {
+            viewModel.startSession()
+            viewModel.handleFunctionCall(
+                FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("HAPPY"))),
+            )
+            assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
+
+            viewModel.stopSession()
+
+            assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
+        }
+
+    @Test
+    fun `handleFunctionCall updates emotion`() {
+        viewModel.handleFunctionCall(
+            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("EXCITED"))),
+        )
+        assertEquals(Emotion.EXCITED, viewModel.currentEmotion.value)
+
+        viewModel.handleFunctionCall(
+            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("SAD"))),
+        )
+        assertEquals(Emotion.SAD, viewModel.currentEmotion.value)
+    }
+
+    @Test
+    fun `handleFunctionCall falls back to NEUTRAL for unknown emotion`() {
+        viewModel.handleFunctionCall(
+            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("ANGRY"))),
+        )
+        assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
+    }
+
+    @Test
+    fun `handleFunctionCall ignores unknown function`() {
+        viewModel.handleFunctionCall(
+            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("HAPPY"))),
+        )
+        assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
+
+        val response = viewModel.handleFunctionCall(
+            FunctionCallPart("unknownFunction", mapOf("arg" to JsonPrimitive("value"))),
+        )
+        // Emotion should not change
+        assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
+        assertEquals("unknownFunction", response.name)
+    }
 }

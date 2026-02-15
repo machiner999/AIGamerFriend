@@ -5,12 +5,17 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.FunctionCallPart
+import com.google.firebase.ai.type.FunctionDeclaration
+import com.google.firebase.ai.type.FunctionResponsePart
 import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.InlineData
 import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.ResponseModality
+import com.google.firebase.ai.type.Schema
 import com.google.firebase.ai.type.SpeechConfig
 import com.google.firebase.ai.type.Tool
 import com.google.firebase.ai.type.Voice
@@ -23,6 +28,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
 
 sealed interface SessionState {
@@ -57,9 +65,23 @@ class GamerViewModel : ViewModel() {
     private val _sessionState = MutableStateFlow<SessionState>(SessionState.Idle)
     val sessionState: StateFlow<SessionState> = _sessionState.asStateFlow()
 
+    private val _currentEmotion = MutableStateFlow(Emotion.NEUTRAL)
+    val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
+
     private var sessionHandle: SessionHandle? = null
     private var sessionTimerJob: Job? = null
     private var retryCount = 0
+
+    private val setEmotionFunction = FunctionDeclaration(
+        name = "setEmotion",
+        description = "AIの表情を変更する。発言内容や状況に合わせて適切な感情を設定する。",
+        parameters = mapOf(
+            "emotion" to Schema.enumeration(
+                Emotion.entries.map { it.name },
+                "設定する感情の種類",
+            ),
+        ),
+    )
 
     private val systemPrompt =
         """
@@ -75,6 +97,8 @@ class GamerViewModel : ViewModel() {
         - 日本語で話す
         - ユーザーがボスの倒し方、攻略法、アイテムの場所、ストーリーの進め方などを聞いてきたら、Google検索を使って最新の攻略情報を調べてから答える
         - 検索結果を元に答える時も、友達っぽく自然に「あー、確かあれはさ...」のように話す
+        - setEmotion関数を使って、発言内容に合わせた表情を設定しろ。話し始める前や感情が変わるタイミングで呼び出せ。
+          例: 褒める時→HAPPY、すごいプレイ→EXCITED、驚き→SURPRISED、考え中→THINKING、危険→WORRIED、ゲームオーバー→SAD、普通→NEUTRAL
         """.trimIndent()
 
     private val liveModel by lazy {
@@ -85,7 +109,7 @@ class GamerViewModel : ViewModel() {
                     responseModality = ResponseModality.AUDIO
                     speechConfig = SpeechConfig(voice = Voice("AOEDE"))
                 },
-            tools = listOf(Tool.googleSearch()),
+            tools = listOf(Tool.googleSearch(), Tool.functionDeclarations(listOf(setEmotionFunction))),
             systemInstruction = content { text(systemPrompt) },
         )
     }
@@ -93,10 +117,28 @@ class GamerViewModel : ViewModel() {
     @VisibleForTesting
     internal var sessionConnector: (suspend () -> SessionHandle)? = null
 
+    @VisibleForTesting
+    internal fun handleFunctionCall(functionCall: FunctionCallPart): FunctionResponsePart {
+        return when (functionCall.name) {
+            "setEmotion" -> {
+                val emotionStr = functionCall.args["emotion"]?.jsonPrimitive?.content ?: "NEUTRAL"
+                _currentEmotion.value = Emotion.fromString(emotionStr)
+                FunctionResponsePart(
+                    functionCall.name,
+                    JsonObject(mapOf("success" to JsonPrimitive(true))),
+                )
+            }
+            else -> FunctionResponsePart(
+                functionCall.name,
+                JsonObject(mapOf("error" to JsonPrimitive("Unknown function: ${functionCall.name}"))),
+            )
+        }
+    }
+
     private suspend fun openSession(): SessionHandle {
         sessionConnector?.let { return it() }
         val session = liveModel.connect()
-        session.startAudioConversation()
+        session.startAudioConversation(::handleFunctionCall)
         return object : SessionHandle {
             override fun stopAudioConversation() = session.stopAudioConversation()
 
@@ -126,6 +168,7 @@ class GamerViewModel : ViewModel() {
         }
         sessionHandle = null
         retryCount = 0
+        _currentEmotion.value = Emotion.NEUTRAL
         _sessionState.value = SessionState.Idle
     }
 
