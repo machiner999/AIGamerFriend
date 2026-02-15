@@ -85,12 +85,13 @@ private class SnapshotFrameAnalyzer(
 
     override fun analyze(imageProxy: ImageProxy) {
         val now = System.currentTimeMillis()
-        if (now - lastCaptureTimeMs >= captureIntervalMs) {
+        if (shouldCaptureFrame(now, lastCaptureTimeMs, captureIntervalMs)) {
             lastCaptureTimeMs = now
 
             val bitmap = imageProxy.toBitmap()
             // ImageProxy from back camera may need rotation
             val rotated = rotateBitmap(bitmap, imageProxy.imageInfo.rotationDegrees.toFloat())
+            if (rotated !== bitmap) bitmap.recycle()
             onFrameCaptured(rotated)
         }
         imageProxy.close()

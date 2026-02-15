@@ -46,6 +46,8 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
 
+Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` in CameraPreview, `isSessionActive()` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
+
 Test dependencies: JUnit 4, MockK, kotlinx-coroutines-test. The `testOptions.unitTests.isReturnDefaultValues = true` flag is set so Android framework classes (like `Log`) return defaults in unit tests.
 
 ## CI
@@ -67,3 +69,4 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintChe
 - StateFlow collected with `collectAsStateWithLifecycle` in Compose
 - JVM toolchain 17
 - ktlint enforced via `.editorconfig`: max line length 120, wildcard imports allowed, Composable function naming exempt
+- Note: `ktlintCheck` only lints `.kts` files due to AGP 9 built-in Kotlin not registering source sets with the ktlint plugin. Source/test Kotlin files are not currently linted by CI.

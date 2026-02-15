@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,6 +56,11 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
     val currentEmotion by viewModel.currentEmotion.collectAsStateWithLifecycle()
     var hasPermissions by remember { mutableStateOf(PermissionHelper.hasAllPermissions(context)) }
+
+    LifecycleResumeEffect(Unit) {
+        hasPermissions = PermissionHelper.hasAllPermissions(context)
+        onPauseOrDispose {}
+    }
 
     val permissionLauncher =
         rememberLauncherForActivityResult(
@@ -190,7 +196,7 @@ private fun StatusText(state: SessionState) {
             is SessionState.Connecting -> "接続中..." to Color(0xFFFFD600)
             is SessionState.Connected -> "ゲーム友達が見てるよ！" to Color(0xFF00E676)
             is SessionState.Reconnecting -> "再接続中..." to Color(0xFFFFD600)
-            is SessionState.Error -> (state as SessionState.Error).message to Color(0xFFFF1744)
+            is SessionState.Error -> state.message to Color(0xFFFF1744)
         }
 
     Text(
