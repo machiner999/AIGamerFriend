@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.Executors
 
 @Composable
@@ -71,6 +72,10 @@ fun CameraPreview(
         },
     )
 }
+
+@VisibleForTesting
+internal fun shouldCaptureFrame(now: Long, lastCaptureTimeMs: Long, captureIntervalMs: Long): Boolean =
+    now - lastCaptureTimeMs >= captureIntervalMs
 
 private class SnapshotFrameAnalyzer(
     private val onFrameCaptured: (Bitmap) -> Unit,

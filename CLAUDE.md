@@ -50,7 +50,7 @@ Test dependencies: JUnit 4, MockK, kotlinx-coroutines-test. The `testOptions.uni
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintCheck → testDebugUnitTest → assembleDebug. It generates a dummy `google-services.json` so the Google Services plugin doesn't fail.
+GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintCheck → testDebugUnitTest → assembleRelease. It generates a dummy `google-services.json` so the Google Services plugin doesn't fail.
 
 ## Key Constraints
 

@@ -39,8 +39,15 @@ import com.example.aigamerfriend.ui.component.AIFace
 import com.example.aigamerfriend.ui.component.CameraPreview
 import com.example.aigamerfriend.ui.component.StatusOverlay
 import com.example.aigamerfriend.util.PermissionHelper
+import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.viewmodel.GamerViewModel
 import com.example.aigamerfriend.viewmodel.SessionState
+
+@VisibleForTesting
+internal fun isSessionActive(state: SessionState): Boolean =
+    state is SessionState.Connected ||
+        state is SessionState.Connecting ||
+        state is SessionState.Reconnecting
 
 @Composable
 fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
@@ -200,10 +207,7 @@ private fun SessionButton(
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
-    val isActive =
-        state is SessionState.Connected ||
-            state is SessionState.Connecting ||
-            state is SessionState.Reconnecting
+    val isActive = isSessionActive(state)
 
     Button(
         onClick = if (isActive) onStop else onStart,

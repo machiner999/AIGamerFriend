@@ -24,23 +24,24 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.viewmodel.SessionState
+
+@VisibleForTesting
+internal fun statusOverlayInfo(state: SessionState): Pair<Color, String>? = when (state) {
+    is SessionState.Connected -> Color(0xFF00E676) to "LIVE"
+    is SessionState.Reconnecting -> Color(0xFFFFD600) to "再接続中"
+    is SessionState.Error -> Color(0xFFFF1744) to "エラー"
+    is SessionState.Connecting -> Color(0xFFFFD600) to "接続中"
+    is SessionState.Idle -> null
+}
 
 @Composable
 fun StatusOverlay(
     state: SessionState,
     modifier: Modifier = Modifier,
 ) {
-    if (state is SessionState.Idle) return
-
-    val (dotColor, label) =
-        when (state) {
-            is SessionState.Connected -> Color(0xFF00E676) to "LIVE"
-            is SessionState.Reconnecting -> Color(0xFFFFD600) to "再接続中"
-            is SessionState.Error -> Color(0xFFFF1744) to "エラー"
-            is SessionState.Connecting -> Color(0xFFFFD600) to "接続中"
-            else -> return
-        }
+    val (dotColor, label) = statusOverlayInfo(state) ?: return
 
     val animatedColor by animateColorAsState(targetValue = dotColor, label = "dotColor")
 

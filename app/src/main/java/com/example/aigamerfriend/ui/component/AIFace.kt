@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.model.Emotion
 import kotlin.math.PI
 import kotlin.math.cos
@@ -25,7 +26,8 @@ import kotlin.math.sin
 private val NeonGreen = Color(0xFF00E676)
 private val FaceBg = Color(0xCC000000)
 
-private data class FaceParams(
+@VisibleForTesting
+internal data class FaceParams(
     val eyeY: Float,
     val eyeRadiusX: Float,
     val eyeRadiusY: Float,
@@ -35,7 +37,8 @@ private data class FaceParams(
     val mouthOpenY: Float,
 )
 
-private fun paramsFor(emotion: Emotion): FaceParams = when (emotion) {
+@VisibleForTesting
+internal fun paramsFor(emotion: Emotion): FaceParams = when (emotion) {
     Emotion.NEUTRAL -> FaceParams(
         eyeY = 0.42f, eyeRadiusX = 0.06f, eyeRadiusY = 0.06f,
         browY = 0.30f, browAngle = 0f,
