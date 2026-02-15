@@ -29,7 +29,21 @@ Android端末の背面カメラでゲーム画面を映すと、カジュアル�
    ```
    > このファイルは `.gitignore` に含まれているため、リポジトリにはコミットされません。
 
-3. ビルド:
+3. リリース用の署名キーストアを作成:
+   ```bash
+   keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias release
+   ```
+
+4. プロジェクトルートに `keystore.properties` を作成し、キーストア情報を記述:
+   ```properties
+   storeFile=../release.jks
+   storePassword=<your-store-password>
+   keyAlias=release
+   keyPassword=<your-key-password>
+   ```
+   > `keystore.properties` と `*.jks` は `.gitignore` に含まれているため、リポジトリにはコミットされません。
+
+5. ビルド:
    ```bash
    ./gradlew assembleRelease
    ```
