@@ -21,7 +21,7 @@ import java.util.concurrent.Executors
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    onFrameCaptured: (Bitmap) -> Unit
+    onFrameCaptured: (Bitmap) -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -34,24 +34,27 @@ fun CameraPreview(
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            val previewView = PreviewView(ctx).apply {
-                scaleType = PreviewView.ScaleType.FILL_CENTER
-            }
+            val previewView =
+                PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                }
 
             val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
 
-                val preview = Preview.Builder().build().also {
-                    it.surfaceProvider = previewView.surfaceProvider
-                }
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also {
-                        it.setAnalyzer(cameraExecutor, SnapshotFrameAnalyzer(onFrameCaptured))
+                val preview =
+                    Preview.Builder().build().also {
+                        it.surfaceProvider = previewView.surfaceProvider
                     }
+
+                val imageAnalysis =
+                    ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also {
+                            it.setAnalyzer(cameraExecutor, SnapshotFrameAnalyzer(onFrameCaptured))
+                        }
 
                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -60,19 +63,18 @@ fun CameraPreview(
                     lifecycleOwner,
                     cameraSelector,
                     preview,
-                    imageAnalysis
+                    imageAnalysis,
                 )
             }, ContextCompat.getMainExecutor(ctx))
 
             previewView
-        }
+        },
     )
 }
 
 private class SnapshotFrameAnalyzer(
-    private val onFrameCaptured: (Bitmap) -> Unit
+    private val onFrameCaptured: (Bitmap) -> Unit,
 ) : ImageAnalysis.Analyzer {
-
     private var lastCaptureTimeMs = 0L
     private val captureIntervalMs = 1000L // 1 FPS
 
@@ -89,7 +91,10 @@ private class SnapshotFrameAnalyzer(
         imageProxy.close()
     }
 
-    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+    private fun rotateBitmap(
+        bitmap: Bitmap,
+        degrees: Float,
+    ): Bitmap {
         if (degrees == 0f) return bitmap
         val matrix = Matrix().apply { postRotate(degrees) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)

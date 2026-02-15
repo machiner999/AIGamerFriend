@@ -9,12 +9,13 @@ Android app that watches game screens via the device's back camera and reacts li
 ## Build Commands
 
 ```bash
-./gradlew assembleDebug       # Debug build
-./gradlew assembleRelease     # Release build
-./gradlew clean               # Clean build artifacts
+./gradlew assembleDebug          # Debug build
+./gradlew assembleRelease        # Release build
+./gradlew clean                  # Clean build artifacts
+./gradlew ktlintCheck            # Lint check
+./gradlew ktlintFormat           # Lint auto-fix
+./gradlew testDebugUnitTest      # Run unit tests
 ```
-
-No tests are configured yet. No linter is configured yet.
 
 ## Prerequisites
 
@@ -30,7 +31,7 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 **State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
 
-**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`.
+**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The model has `Tool.googleSearch()` enabled for game walkthrough queries — this is a server-side tool (Google Search Grounding) so no client-side function call handler is needed.
 
 ## Key Constraints
 

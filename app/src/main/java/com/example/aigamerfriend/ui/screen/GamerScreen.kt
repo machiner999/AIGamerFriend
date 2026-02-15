@@ -40,18 +40,17 @@ import com.example.aigamerfriend.viewmodel.GamerViewModel
 import com.example.aigamerfriend.viewmodel.SessionState
 
 @Composable
-fun GamerScreen(
-    viewModel: GamerViewModel = viewModel()
-) {
+fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val context = LocalContext.current
     val sessionState by viewModel.sessionState.collectAsStateWithLifecycle()
     var hasPermissions by remember { mutableStateOf(PermissionHelper.hasAllPermissions(context)) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasPermissions = permissions.values.all { it }
-    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions(),
+        ) { permissions ->
+            hasPermissions = permissions.values.all { it }
+        }
 
     // Stop session when leaving the screen
     DisposableEffect(Unit) {
@@ -59,38 +58,42 @@ fun GamerScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
         if (hasPermissions) {
             // Camera preview area (70%)
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.7f)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(0.7f),
             ) {
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
-                    onFrameCaptured = { bitmap -> viewModel.sendVideoFrame(bitmap) }
+                    onFrameCaptured = { bitmap -> viewModel.sendVideoFrame(bitmap) },
                 )
 
                 StatusOverlay(
                     state = sessionState,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(16.dp)
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(16.dp),
                 )
             }
 
             // Control area (30%)
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.3f)
-                    .padding(24.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(0.3f)
+                        .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
             ) {
                 StatusText(sessionState)
 
@@ -99,23 +102,24 @@ fun GamerScreen(
                 SessionButton(
                     state = sessionState,
                     onStart = { viewModel.startSession() },
-                    onStop = { viewModel.stopSession() }
+                    onStop = { viewModel.stopSession() },
                 )
             }
         } else {
             // Permission request view
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     text = "カメラとマイクの許可が必要です",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -124,7 +128,7 @@ fun GamerScreen(
                     text = "TVに映るゲーム画面を撮影し、友達のようにリアクションするために、カメラとマイクへのアクセスが必要です。",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -132,7 +136,7 @@ fun GamerScreen(
                 Button(
                     onClick = {
                         permissionLauncher.launch(PermissionHelper.REQUIRED_PERMISSIONS)
-                    }
+                    },
                 ) {
                     Text("許可する")
                 }
@@ -141,11 +145,12 @@ fun GamerScreen(
 
                 OutlinedButton(
                     onClick = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
+                        val intent =
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
                         context.startActivity(intent)
-                    }
+                    },
                 ) {
                     Text("設定を開く")
                 }
@@ -156,19 +161,20 @@ fun GamerScreen(
 
 @Composable
 private fun StatusText(state: SessionState) {
-    val (text, color) = when (state) {
-        is SessionState.Idle -> "タップしてゲーム友達を呼ぼう" to MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-        is SessionState.Connecting -> "接続中..." to Color(0xFFFFD600)
-        is SessionState.Connected -> "ゲーム友達が見てるよ！" to Color(0xFF00E676)
-        is SessionState.Reconnecting -> "再接続中..." to Color(0xFFFFD600)
-        is SessionState.Error -> (state as SessionState.Error).message to Color(0xFFFF1744)
-    }
+    val (text, color) =
+        when (state) {
+            is SessionState.Idle -> "タップしてゲーム友達を呼ぼう" to MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            is SessionState.Connecting -> "接続中..." to Color(0xFFFFD600)
+            is SessionState.Connected -> "ゲーム友達が見てるよ！" to Color(0xFF00E676)
+            is SessionState.Reconnecting -> "再接続中..." to Color(0xFFFFD600)
+            is SessionState.Error -> (state as SessionState.Error).message to Color(0xFFFF1744)
+        }
 
     Text(
         text = text,
         style = MaterialTheme.typography.bodyLarge,
         color = color,
-        textAlign = TextAlign.Center
+        textAlign = TextAlign.Center,
     )
 }
 
@@ -176,21 +182,23 @@ private fun StatusText(state: SessionState) {
 private fun SessionButton(
     state: SessionState,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
 ) {
-    val isActive = state is SessionState.Connected ||
-        state is SessionState.Connecting ||
-        state is SessionState.Reconnecting
+    val isActive =
+        state is SessionState.Connected ||
+            state is SessionState.Connecting ||
+            state is SessionState.Reconnecting
 
     Button(
         onClick = if (isActive) onStop else onStart,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isActive) Color(0xFFFF1744) else MaterialTheme.colorScheme.primary
-        )
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = if (isActive) Color(0xFFFF1744) else MaterialTheme.colorScheme.primary,
+            ),
     ) {
         Text(
             text = if (isActive) "終了" else "開始",
-            style = MaterialTheme.typography.titleLarge
+            style = MaterialTheme.typography.titleLarge,
         )
     }
 }
