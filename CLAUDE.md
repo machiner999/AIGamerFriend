@@ -38,7 +38,11 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 **State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
 
-**Emotion system**: Gemini calls `setEmotion(emotion)` via function calling to update the AI's facial expression. The `handleFunctionCall()` method in `GamerViewModel` parses the emotion string, updates `_currentEmotion: StateFlow<Emotion>`, and `AIFace` composable animates between states using spring physics. The face renders on a Canvas with neon-green eyes/eyebrows/mouth on a semi-transparent black circle, shown only when Connected. Seven emotions: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD.
+**UI layout**: Full-screen camera preview with overlays. `StatusOverlay` (top-left, glass morphism) shows connection state. `AIFace` (bottom-center, above controls) shows when Connected. `GlassControlPanel` (bottom-anchored row) has status text + start/stop button with `WindowInsets.safeDrawing` support. All overlays use semi-transparent black backgrounds with subtle white borders.
+
+**Emotion system**: Gemini calls `setEmotion(emotion)` via function calling to update the AI's facial expression. The `handleFunctionCall()` method in `GamerViewModel` parses the emotion string, updates `_currentEmotion: StateFlow<Emotion>`, and `AIFace` composable animates between states using spring physics. The face renders on a Canvas with neon-green eyes/eyebrows/mouth on a semi-transparent black circle with a neon glow halo, shown only when Connected. `AIFace` has a breathing animation (subtle scale oscillation via `rememberInfiniteTransition`) and a bounce effect on emotion changes (via `Animatable` spring). Seven emotions: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD.
+
+**Haptic feedback**: `LaunchedEffect` monitors `sessionState` and `currentEmotion` changes. `hapticForSessionTransition()` returns CONFIRM on connection, REJECT on error. `hapticForEmotionChange()` returns TICK on any emotion change. Uses API 30+ haptic constants with fallback for older devices.
 
 **Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The model has two tools: `Tool.googleSearch()` for game walkthrough queries (server-side, no handler needed) and `Tool.functionDeclarations(listOf(setEmotionFunction))` for emotion control (client-side, handled by `::handleFunctionCall`). Function calling types (`FunctionCallPart`, `FunctionResponsePart`, `JsonObject`) come from `kotlinx-serialization-json`, which must be an explicit dependency since Firebase AI exposes these types but doesn't transitively export the library.
 
@@ -48,7 +52,7 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
 
-Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` in CameraPreview, `isSessionActive()` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
+Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
 
 Test dependencies: JUnit 4, MockK, kotlinx-coroutines-test. The `testOptions.unitTests.isReturnDefaultValues = true` flag is set so Android framework classes (like `Log`) return defaults in unit tests.
 

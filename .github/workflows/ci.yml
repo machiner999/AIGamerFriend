@@ -50,11 +50,5 @@ jobs:
           }
           EOF
 
-      - name: Lint check
-        run: ./gradlew ktlintCheck
-
-      - name: Unit tests
-        run: ./gradlew testDebugUnitTest
-
-      - name: Build release APK
-        run: ./gradlew assembleRelease
+      - name: Lint, test, and build
+        run: ./gradlew ktlintCheck testDebugUnitTest assembleRelease
