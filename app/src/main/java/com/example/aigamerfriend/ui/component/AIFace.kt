@@ -1,14 +1,20 @@
 package com.example.aigamerfriend.ui.component
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -16,6 +22,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.model.Emotion
@@ -89,16 +96,49 @@ fun AIFace(emotion: Emotion, modifier: Modifier = Modifier) {
     val mouthCurve by animateFloatAsState(target.mouthCurve, springSpec, label = "mouthCurve")
     val mouthOpenY by animateFloatAsState(target.mouthOpenY, springSpec, label = "mouthOpenY")
 
+    // Breathing animation: subtle scale oscillation
+    val breathTransition = rememberInfiniteTransition(label = "breath")
+    val breathScale by breathTransition.animateFloat(
+        initialValue = 0.97f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = FastOutSlowInEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "breathScale",
+    )
+
+    // Emotion change bounce
+    val bounceScale = remember { Animatable(1f) }
+    LaunchedEffect(emotion) {
+        bounceScale.animateTo(
+            targetValue = 1.08f,
+            animationSpec = spring(dampingRatio = 0.4f, stiffness = 600f),
+        )
+        bounceScale.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        )
+    }
+
+    val combinedScale = breathScale * bounceScale.value
+
     Canvas(
         modifier = modifier
-            .size(120.dp)
-            .clip(CircleShape),
+            .size(150.dp)
+            .graphicsLayer(scaleX = combinedScale, scaleY = combinedScale),
     ) {
-        // Background circle
-        drawCircle(color = FaceBg)
-
         val w = size.width
         val h = size.height
+
+        // Neon glow behind face
+        drawCircle(
+            color = NeonGreen.copy(alpha = 0.12f),
+            radius = size.minDimension / 2f * 1.15f,
+        )
+
+        // Background circle
+        drawCircle(color = FaceBg)
 
         // Eyes
         drawEye(

@@ -26,6 +26,8 @@ Run a single test class:
 
 A real `app/google-services.json` from Firebase Console is required (the placeholder in the repo won't connect to Gemini). It is gitignored. CI generates a dummy one for build verification.
 
+For release builds, create `keystore.properties` in the project root with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`. Both `keystore.properties` and `*.jks` are gitignored. If the file is absent, `assembleRelease` builds an unsigned APK (CI uses this path).
+
 ## Architecture
 
 Single-screen app with one ViewModel. No navigation, no database, no repository layer.
@@ -40,7 +42,7 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 **Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The model has two tools: `Tool.googleSearch()` for game walkthrough queries (server-side, no handler needed) and `Tool.functionDeclarations(listOf(setEmotionFunction))` for emotion control (client-side, handled by `::handleFunctionCall`). Function calling types (`FunctionCallPart`, `FunctionResponsePart`, `JsonObject`) come from `kotlinx-serialization-json`, which must be an explicit dependency since Firebase AI exposes these types but doesn't transitively export the library.
 
-**Build toolchain**: AGP 9.0.1 with built-in Kotlin (no `org.jetbrains.kotlin.android` plugin). Kotlin compilation is handled by AGP directly. The Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose`) is still applied separately.
+**Build toolchain**: AGP 9.0.1 / Gradle 9.3.1 with built-in Kotlin (no `org.jetbrains.kotlin.android` plugin). Kotlin compilation is handled by AGP directly. The Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose` v2.2.10) is still applied separately. The Gemini model is `gemini-2.5-flash-native-audio-preview-12-2025` (preview — may need updating).
 
 ## Testing
 

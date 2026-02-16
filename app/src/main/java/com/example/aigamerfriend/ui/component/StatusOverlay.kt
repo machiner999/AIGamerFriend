@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -67,7 +68,12 @@ fun StatusOverlay(
         modifier =
             modifier
                 .background(
-                    color = Color.Black.copy(alpha = 0.6f),
+                    color = Color.Black.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.08f),
                     shape = RoundedCornerShape(16.dp),
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp),
