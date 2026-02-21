@@ -32,9 +32,9 @@ For release builds, create `keystore.properties` in the project root with `store
 
 Single-screen app with one ViewModel. No navigation, no database, no repository layer.
 
-**Data flow**: `CameraPreview` captures frames at 1FPS → `GamerViewModel.sendVideoFrame()` compresses to JPEG and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
+**Data flow**: `CameraPreview` captures frames at 1FPS → `GamerViewModel.sendVideoFrame()` compresses to JPEG (quality 80) and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
 
-**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, the system prompt is re-sent so character is preserved, but conversation context is lost. On network errors, retries up to 3 times with linear backoff.
+**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, the system prompt is re-sent so character is preserved, but conversation context is lost. On network errors, retries up to 3 times with linear backoff (`RETRY_BASE_DELAY_MS * retryCount`, starting at 2s).
 
 **State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
 
@@ -44,13 +44,17 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 **Haptic feedback**: `LaunchedEffect` monitors `sessionState` and `currentEmotion` changes. `hapticForSessionTransition()` returns CONFIRM on connection, REJECT on error. `hapticForEmotionChange()` returns TICK on any emotion change. Uses API 30+ haptic constants with fallback for older devices.
 
-**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The model has two tools: `Tool.googleSearch()` for game walkthrough queries (server-side, no handler needed) and `Tool.functionDeclarations(listOf(setEmotionFunction))` for emotion control (client-side, handled by `::handleFunctionCall`). Function calling types (`FunctionCallPart`, `FunctionResponsePart`, `JsonObject`) come from `kotlinx-serialization-json`, which must be an explicit dependency since Firebase AI exposes these types but doesn't transitively export the library.
+**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The voice is `Voice("AOEDE")`. Function calling types (`FunctionCallPart`, `FunctionResponsePart`, `JsonObject`) come from `kotlinx-serialization-json`, which must be an explicit dependency since Firebase AI exposes these types but doesn't transitively export the library.
+
+**Tools are currently disabled** (commented out in `liveModel` config): Firebase AI Logic SDK serializes `FunctionDeclaration.parameters` as `parameters_json_schema`, which the Gemini Live API rejects (`"parameters_json_schema must not be set"`). This affects ALL tool types including `Tool.googleSearch()` and `Tool.functionDeclarations()`. Both firebase-ai 17.8.0 and 17.9.0 (BOM 34.9.0) have this issue. The Firebase docs state Live API tool support is "coming soon" (https://firebase.google.com/docs/ai-logic/live-api). The emotion function definitions (`emotionFunctions`) and handler (`handleFunctionCall`) are still in the code, ready to be re-enabled. To restore tools, uncomment the `tools = listOf(...)` line in `liveModel` initialization. The Gemini Live API itself does support function calling — the BrewingCoffe project (same author) works around this by using raw WebSocket (OkHttp) instead of the Firebase SDK, sending `parameters` directly in the correct format. firebase-ai is pinned to `17.8.0!!` (strict) to avoid BOM override; 17.9.0 breaks even without tools in some configurations.
 
 **Build toolchain**: AGP 9.0.1 / Gradle 9.3.1 with built-in Kotlin (no `org.jetbrains.kotlin.android` plugin). Kotlin compilation is handled by AGP directly. The Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose` v2.2.10) is still applied separately. The Gemini model is `gemini-2.5-flash-native-audio-preview-12-2025` (preview — may need updating).
 
 ## Testing
 
-Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
+Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Both `SessionHandle` (`@VisibleForTesting internal interface`) and `SessionState` sealed interface are defined in `GamerViewModel.kt`. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
+
+Test files: `GamerViewModelTest.kt` (session lifecycle, retries, emotion handling), `GamerScreenKtTest.kt` (haptic logic, state helpers), `AIFaceKtTest.kt` (emotion param mapping), `StatusOverlayKtTest.kt` (overlay state mapping), `CameraPreviewKtTest.kt` (frame throttle timing), `EmotionTest.kt` (enum parsing), `PermissionHelperTest.kt` (permission checks).
 
 Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
 
@@ -62,10 +66,13 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintChe
 
 ## Key Constraints
 
+- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — portrait orientation only
 - Session auto-reconnects at 1:50 — do not extend `SESSION_DURATION_MS` beyond 120_000
+- CameraX dependency is alpha (`1.5.0-alpha06`) — may receive breaking API changes on update
 - Frame rate is throttled in `SnapshotFrameAnalyzer.captureIntervalMs` — keep at 1000ms or higher
 - System prompt is in Japanese (the AI character speaks Japanese)
-- `app/google-services.json` must never be committed (contains API keys)
+- `app/google-services.json` must never be committed (contains API keys). Must be downloaded from Firebase Console for the correct package name (`com.example.aigamerfriend`) — do not manually edit the package name in the JSON
+- The Google Cloud API key must have the Generative Language API enabled. Android application restrictions on the API key must include the release APK's SHA-1 fingerprint, or be set to "None" for testing
 - AGP 9.0 uses built-in Kotlin — do not add `org.jetbrains.kotlin.android` plugin (it is incompatible with AGP 9.0's internal classes)
 - `kotlinx-serialization-json` must remain an explicit dependency — Firebase AI SDK uses these types in its public API but does not export them transitively
 

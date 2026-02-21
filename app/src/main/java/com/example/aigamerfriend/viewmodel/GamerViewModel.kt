@@ -15,7 +15,6 @@ import com.google.firebase.ai.type.GenerativeBackend
 import com.google.firebase.ai.type.InlineData
 import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.ResponseModality
-import com.google.firebase.ai.type.Schema
 import com.google.firebase.ai.type.SpeechConfig
 import com.google.firebase.ai.type.Tool
 import com.google.firebase.ai.type.Voice
@@ -30,7 +29,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
 
 sealed interface SessionState {
@@ -72,16 +70,21 @@ class GamerViewModel : ViewModel() {
     private var sessionTimerJob: Job? = null
     private var retryCount = 0
 
-    private val setEmotionFunction = FunctionDeclaration(
-        name = "setEmotion",
-        description = "AIの表情を変更する。発言内容や状況に合わせて適切な感情を設定する。",
-        parameters = mapOf(
-            "emotion" to Schema.enumeration(
-                Emotion.entries.map { it.name },
-                "設定する感情の種類",
-            ),
-        ),
-    )
+    private val emotionFunctions = Emotion.entries.map { emotion ->
+        FunctionDeclaration(
+            name = "setEmotion_${emotion.name}",
+            description = when (emotion) {
+                Emotion.NEUTRAL -> "表情を落ち着いた状態にする"
+                Emotion.HAPPY -> "表情を嬉しい・楽しいにする"
+                Emotion.EXCITED -> "表情を興奮・大喜びにする"
+                Emotion.SURPRISED -> "表情を驚きにする"
+                Emotion.THINKING -> "表情を考え中・悩み中にする"
+                Emotion.WORRIED -> "表情を心配・不安にする"
+                Emotion.SAD -> "表情を悲しい・残念にする"
+            },
+            parameters = emptyMap(),
+        )
+    }
 
     private val systemPrompt =
         """
@@ -111,8 +114,8 @@ class GamerViewModel : ViewModel() {
         - 調べた後も友達口調で自然に話せ（「あー確かあれってさ...」「ネットで見たけど〜らしいよ」）
 
         ## 表情
-        setEmotion関数を発言の感情に合わせて呼び出せ。感情が変わるたびに更新しろ。
-        HAPPY:褒める・楽しい / EXCITED:すごいプレイ・勝利 / SURPRISED:予想外の展開 / THINKING:考え中・悩み中 / WORRIED:ピンチ・危険 / SAD:ゲームオーバー・残念 / NEUTRAL:落ち着いている
+        発言の感情に合わせて対応するsetEmotion_xxx関数を呼び出せ。感情が変わるたびに更新しろ。
+        setEmotion_HAPPY:褒める・楽しい / setEmotion_EXCITED:すごいプレイ・勝利 / setEmotion_SURPRISED:予想外の展開 / setEmotion_THINKING:考え中・悩み中 / setEmotion_WORRIED:ピンチ・危険 / setEmotion_SAD:ゲームオーバー・残念 / setEmotion_NEUTRAL:落ち着いている
         """.trimIndent()
 
     private val liveModel by lazy {
@@ -123,7 +126,8 @@ class GamerViewModel : ViewModel() {
                     responseModality = ResponseModality.AUDIO
                     speechConfig = SpeechConfig(voice = Voice("AOEDE"))
                 },
-            tools = listOf(Tool.googleSearch(), Tool.functionDeclarations(listOf(setEmotionFunction))),
+            // TODO: Re-enable tools once Firebase AI SDK fixes parameters_json_schema serialization
+            // tools = listOf(Tool.googleSearch(), Tool.functionDeclarations(emotionFunctions)),
             systemInstruction = content { text(systemPrompt) },
         )
     }
@@ -133,16 +137,16 @@ class GamerViewModel : ViewModel() {
 
     @VisibleForTesting
     internal fun handleFunctionCall(functionCall: FunctionCallPart): FunctionResponsePart {
-        return when (functionCall.name) {
-            "setEmotion" -> {
-                val emotionStr = functionCall.args["emotion"]?.jsonPrimitive?.content ?: "NEUTRAL"
-                _currentEmotion.value = Emotion.fromString(emotionStr)
-                FunctionResponsePart(
-                    functionCall.name,
-                    JsonObject(mapOf("success" to JsonPrimitive(true))),
-                )
-            }
-            else -> FunctionResponsePart(
+        val prefix = "setEmotion_"
+        return if (functionCall.name.startsWith(prefix)) {
+            val emotionStr = functionCall.name.removePrefix(prefix)
+            _currentEmotion.value = Emotion.fromString(emotionStr)
+            FunctionResponsePart(
+                functionCall.name,
+                JsonObject(mapOf("success" to JsonPrimitive(true))),
+            )
+        } else {
+            FunctionResponsePart(
                 functionCall.name,
                 JsonObject(mapOf("error" to JsonPrimitive("Unknown function: ${functionCall.name}"))),
             )
@@ -270,7 +274,8 @@ class GamerViewModel : ViewModel() {
                 }
             }
         } else {
-            _sessionState.value = SessionState.Error("接続に失敗しました。ネットワークを確認してください。")
+            val detail = e.message ?: e.javaClass.simpleName
+            _sessionState.value = SessionState.Error("接続失敗: $detail")
         }
     }
 
