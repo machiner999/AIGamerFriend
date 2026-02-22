@@ -6,33 +6,30 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aigamerfriend.BuildConfig
+import com.example.aigamerfriend.data.AudioManager
+import com.example.aigamerfriend.data.ConnectionState
+import com.example.aigamerfriend.data.GeminiLiveClient
+import com.example.aigamerfriend.data.GeminiSetupMessage
 import com.example.aigamerfriend.data.MemoryStore
 import com.example.aigamerfriend.memoryDataStore
 import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
-import com.google.firebase.ai.type.Content
-import com.google.firebase.ai.type.FunctionCallPart
-import com.google.firebase.ai.type.FunctionDeclaration
-import com.google.firebase.ai.type.FunctionResponsePart
 import com.google.firebase.ai.type.GenerativeBackend
-import com.google.firebase.ai.type.InlineData
 import com.google.firebase.ai.type.PublicPreviewAPI
-import com.google.firebase.ai.type.ResponseModality
-import com.google.firebase.ai.type.SpeechConfig
-import com.google.firebase.ai.type.Tool
-import com.google.firebase.ai.type.Voice
 import com.google.firebase.ai.type.content
-import com.google.firebase.ai.type.liveGenerationConfig
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import java.io.ByteArrayOutputStream
 
@@ -52,7 +49,7 @@ sealed interface SessionState {
 internal interface SessionHandle {
     fun stopAudioConversation()
 
-    suspend fun sendVideoRealtime(data: InlineData)
+    suspend fun sendVideoFrame(jpegBytes: ByteArray)
 }
 
 @OptIn(PublicPreviewAPI::class)
@@ -93,8 +90,8 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             .generativeModel(SUMMARY_MODEL_NAME)
     }
 
-    private val emotionFunctions = Emotion.entries.map { emotion ->
-        FunctionDeclaration(
+    private val emotionToolDeclarations = Emotion.entries.map { emotion ->
+        GeminiSetupMessage.FunctionDeclaration(
             name = "setEmotion_${emotion.name}",
             description = when (emotion) {
                 Emotion.NEUTRAL -> "表情を落ち着いた状態にする"
@@ -105,9 +102,14 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 Emotion.WORRIED -> "表情を心配・不安にする"
                 Emotion.SAD -> "表情を悲しい・残念にする"
             },
-            parameters = emptyMap(),
+            parameters = null,
         )
     }
+
+    private val liveTools = listOf(
+        GeminiSetupMessage.Tool(functionDeclarations = emotionToolDeclarations),
+        GeminiSetupMessage.Tool(googleSearch = GeminiSetupMessage.GoogleSearch()),
+    )
 
     private val baseSystemPrompt =
         """
@@ -148,49 +150,90 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             memorySummary
     }
 
-    private fun createLiveModel(memorySummary: String?) =
-        Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(
-            modelName = MODEL_NAME,
-            generationConfig =
-                liveGenerationConfig {
-                    responseModality = ResponseModality.AUDIO
-                    speechConfig = SpeechConfig(voice = Voice("AOEDE"))
-                },
-            // TODO: Re-enable tools once Firebase AI SDK fixes parameters_json_schema serialization
-            // tools = listOf(Tool.googleSearch(), Tool.functionDeclarations(emotionFunctions)),
-            systemInstruction = content { text(buildSystemPrompt(memorySummary)) },
-        )
-
     @VisibleForTesting
     internal var sessionConnector: (suspend () -> SessionHandle)? = null
 
     @VisibleForTesting
-    internal fun handleFunctionCall(functionCall: FunctionCallPart): FunctionResponsePart {
+    internal fun handleFunctionCall(name: String, callId: String): String {
         val prefix = "setEmotion_"
-        return if (functionCall.name.startsWith(prefix)) {
-            val emotionStr = functionCall.name.removePrefix(prefix)
+        return if (name.startsWith(prefix)) {
+            val emotionStr = name.removePrefix(prefix)
             _currentEmotion.value = Emotion.fromString(emotionStr)
-            FunctionResponsePart(
-                functionCall.name,
-                JsonObject(mapOf("success" to JsonPrimitive(true))),
-            )
+            """{"success": true}"""
         } else {
-            FunctionResponsePart(
-                functionCall.name,
-                JsonObject(mapOf("error" to JsonPrimitive("Unknown function: ${functionCall.name}"))),
-            )
+            """{"error": "Unknown function: $name"}"""
         }
     }
 
     private suspend fun openSession(memorySummary: String?): SessionHandle {
         sessionConnector?.let { return it() }
-        val model = createLiveModel(memorySummary)
-        val session = model.connect()
-        session.startAudioConversation(::handleFunctionCall)
-        return object : SessionHandle {
-            override fun stopAudioConversation() = session.stopAudioConversation()
 
-            override suspend fun sendVideoRealtime(data: InlineData) = session.sendVideoRealtime(data)
+        val systemPrompt = buildSystemPrompt(memorySummary)
+
+        val liveClient = GeminiLiveClient(
+            apiKey = BuildConfig.GEMINI_API_KEY,
+            modelName = MODEL_NAME,
+            systemInstruction = systemPrompt,
+            tools = liveTools,
+        )
+
+        val audioManager = AudioManager()
+
+        // Set up function call handler
+        liveClient.onFunctionCall = { name, callId, _ ->
+            val result = handleFunctionCall(name, callId)
+            val resultMap = mapOf<String, JsonElement>(
+                if (name.startsWith("setEmotion_")) {
+                    "success" to JsonPrimitive(true)
+                } else {
+                    "error" to JsonPrimitive("Unknown function: $name")
+                },
+            )
+            liveClient.sendToolResponse(callId, name, resultMap)
+        }
+
+        // Connect and wait for setupComplete
+        liveClient.connect(viewModelScope)
+        withTimeout(CONNECT_TIMEOUT_MS) {
+            liveClient.connectionState.first { it == ConnectionState.CONNECTED }
+        }
+
+        // Start audio I/O
+        audioManager.onAudioDataAvailable = { audioData ->
+            liveClient.sendAudioChunk(audioData)
+        }
+        audioManager.start(viewModelScope)
+
+        // Start audio playback loop
+        val playbackJob = viewModelScope.launch(Dispatchers.IO) {
+            for (audioBytes in liveClient.audioDataChannel) {
+                audioManager.playAudio(audioBytes)
+            }
+        }
+
+        // Monitor connection state for errors
+        val monitorJob = viewModelScope.launch {
+            liveClient.connectionState.collect { state ->
+                if (state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED) {
+                    if (_sessionState.value is SessionState.Connected) {
+                        Log.w(TAG, "WebSocket disconnected unexpectedly: $state")
+                        handleConnectionError(RuntimeException("WebSocket disconnected"))
+                    }
+                }
+            }
+        }
+
+        return object : SessionHandle {
+            override fun stopAudioConversation() {
+                monitorJob.cancel()
+                playbackJob.cancel()
+                audioManager.shutdown()
+                liveClient.disconnect()
+            }
+
+            override suspend fun sendVideoFrame(jpegBytes: ByteArray) {
+                liveClient.sendVideoFrame(jpegBytes)
+            }
         }
     }
 
@@ -239,7 +282,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 recentFrames.addLast(jpegBytes.copyOf())
 
-                handle.sendVideoRealtime(InlineData(jpegBytes, "image/jpeg"))
+                handle.sendVideoFrame(jpegBytes)
             } catch (e: Exception) {
                 Log.w(TAG, "Error sending video frame", e)
             } finally {

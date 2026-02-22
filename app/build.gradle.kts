@@ -4,6 +4,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.gms.google-services")
     id("org.jlleitschuh.gradle.ktlint")
 }
@@ -12,6 +13,12 @@ val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
 }
 
 base {
@@ -39,6 +46,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField(
+            "String",
+            "GEMINI_API_KEY",
+            "\"${localProperties.getProperty("GEMINI_API_KEY", "")}\"",
+        )
     }
 
     buildTypes {
@@ -65,6 +78,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
@@ -81,8 +95,11 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
     implementation("com.google.firebase:firebase-ai:17.8.0!!")
 
-    // Kotlinx Serialization JSON (required for Firebase AI function calling types)
+    // Kotlinx Serialization JSON (required for Firebase AI function calling types + WebSocket models)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+
+    // OkHttp (WebSocket for Gemini Live API direct connection)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Compose
     implementation(platform("androidx.compose:compose-bom:2025.01.01"))

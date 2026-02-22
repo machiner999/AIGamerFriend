@@ -3,8 +3,6 @@ package com.example.aigamerfriend.viewmodel
 import android.app.Application
 import com.example.aigamerfriend.data.MemoryStore
 import com.example.aigamerfriend.model.Emotion
-import com.google.firebase.ai.type.FunctionCallPart
-import com.google.firebase.ai.type.InlineData
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -38,7 +36,7 @@ class GamerViewModelTest {
                 stopCalled = true
             }
 
-            override suspend fun sendVideoRealtime(data: InlineData) {
+            override suspend fun sendVideoFrame(jpegBytes: ByteArray) {
                 videoFramesSent++
             }
         }
@@ -225,9 +223,7 @@ class GamerViewModelTest {
     fun `stopSession resets emotion to NEUTRAL`() =
         viewModelTest {
             viewModel.startSession()
-            viewModel.handleFunctionCall(
-                FunctionCallPart("setEmotion_HAPPY", emptyMap()),
-            )
+            viewModel.handleFunctionCall("setEmotion_HAPPY", "call-1")
             assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
 
             viewModel.stopSession()
@@ -237,38 +233,28 @@ class GamerViewModelTest {
 
     @Test
     fun `handleFunctionCall updates emotion`() {
-        viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion_EXCITED", emptyMap()),
-        )
+        viewModel.handleFunctionCall("setEmotion_EXCITED", "call-1")
         assertEquals(Emotion.EXCITED, viewModel.currentEmotion.value)
 
-        viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion_SAD", emptyMap()),
-        )
+        viewModel.handleFunctionCall("setEmotion_SAD", "call-2")
         assertEquals(Emotion.SAD, viewModel.currentEmotion.value)
     }
 
     @Test
     fun `handleFunctionCall falls back to NEUTRAL for unknown emotion`() {
-        viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion_ANGRY", emptyMap()),
-        )
+        viewModel.handleFunctionCall("setEmotion_ANGRY", "call-1")
         assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
     }
 
     @Test
     fun `handleFunctionCall ignores unknown function`() {
-        viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion_HAPPY", emptyMap()),
-        )
+        viewModel.handleFunctionCall("setEmotion_HAPPY", "call-1")
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
 
-        val response = viewModel.handleFunctionCall(
-            FunctionCallPart("unknownFunction", emptyMap()),
-        )
+        val response = viewModel.handleFunctionCall("unknownFunction", "call-2")
         // Emotion should not change
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
-        assertEquals("unknownFunction", response.name)
+        assertTrue(response.contains("error"))
     }
 
     @Test
