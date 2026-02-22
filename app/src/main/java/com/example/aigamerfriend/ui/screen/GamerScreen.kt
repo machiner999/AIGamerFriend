@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.fadeIn
@@ -51,6 +52,7 @@ import com.example.aigamerfriend.ui.component.AIFace
 import com.example.aigamerfriend.ui.component.CameraPreview
 import com.example.aigamerfriend.ui.component.StatusOverlay
 import com.example.aigamerfriend.util.PermissionHelper
+import androidx.activity.ComponentActivity
 import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.model.Emotion
 import com.example.aigamerfriend.viewmodel.GamerViewModel
@@ -108,6 +110,20 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
         ) { permissions ->
             hasPermissions = permissions.values.all { it }
         }
+
+    // Keep screen on while session is active
+    val activity = context as? ComponentActivity
+    val keepScreenOn = isSessionActive(sessionState)
+    DisposableEffect(keepScreenOn) {
+        if (keepScreenOn) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     // Stop session when leaving the screen
     DisposableEffect(Unit) {

@@ -23,6 +23,7 @@ import com.google.firebase.ai.type.liveGenerationConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +60,7 @@ class GamerViewModel : ViewModel() {
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
         private const val JPEG_QUALITY = 60
+        private const val CONNECT_TIMEOUT_MS = 15_000L // 15sec timeout for connect
         private const val FRAME_BUFFER_SIZE = 32_768 // 32KB — expected JPEG size after downscale
     }
 
@@ -215,14 +217,19 @@ class GamerViewModel : ViewModel() {
     private suspend fun connectSession() {
         _sessionState.value = SessionState.Connecting
         try {
-            val handle = openSession()
+            val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession() }
             sessionHandle = handle
             _sessionState.value = SessionState.Connected
             retryCount = 0
             startSessionTimer()
             Log.d(TAG, "Session connected")
         } catch (e: CancellationException) {
-            throw e
+            if (e is kotlinx.coroutines.TimeoutCancellationException) {
+                Log.e(TAG, "Session connect timed out after ${CONNECT_TIMEOUT_MS}ms")
+                handleConnectionError(RuntimeException("接続タイムアウト", e))
+            } else {
+                throw e
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to connect session", e)
             handleConnectionError(e)
@@ -239,23 +246,25 @@ class GamerViewModel : ViewModel() {
             }
     }
 
-    private suspend fun reconnect() {
+    private fun reconnect() {
+        val previousHandle = sessionHandle
+        sessionHandle = null
         _sessionState.value = SessionState.Reconnecting
         try {
-            sessionHandle?.stopAudioConversation()
+            previousHandle?.stopAudioConversation()
         } catch (e: Exception) {
             Log.w(TAG, "Error stopping previous session", e)
         }
-        sessionHandle = null
-        sessionTimerJob?.cancel()
 
-        try {
-            connectSession()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to reconnect", e)
-            handleConnectionError(e)
+        viewModelScope.launch {
+            try {
+                connectSession()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reconnect", e)
+                handleConnectionError(e)
+            }
         }
     }
 
