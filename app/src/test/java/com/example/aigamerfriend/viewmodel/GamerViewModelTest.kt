@@ -4,7 +4,6 @@ import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.ai.type.FunctionCallPart
 import com.google.firebase.ai.type.InlineData
 import io.mockk.mockk
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -215,7 +214,7 @@ class GamerViewModelTest {
         viewModelTest {
             viewModel.startSession()
             viewModel.handleFunctionCall(
-                FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("HAPPY"))),
+                FunctionCallPart("setEmotion_HAPPY", emptyMap()),
             )
             assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
 
@@ -227,12 +226,12 @@ class GamerViewModelTest {
     @Test
     fun `handleFunctionCall updates emotion`() {
         viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("EXCITED"))),
+            FunctionCallPart("setEmotion_EXCITED", emptyMap()),
         )
         assertEquals(Emotion.EXCITED, viewModel.currentEmotion.value)
 
         viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("SAD"))),
+            FunctionCallPart("setEmotion_SAD", emptyMap()),
         )
         assertEquals(Emotion.SAD, viewModel.currentEmotion.value)
     }
@@ -240,7 +239,7 @@ class GamerViewModelTest {
     @Test
     fun `handleFunctionCall falls back to NEUTRAL for unknown emotion`() {
         viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("ANGRY"))),
+            FunctionCallPart("setEmotion_ANGRY", emptyMap()),
         )
         assertEquals(Emotion.NEUTRAL, viewModel.currentEmotion.value)
     }
@@ -248,12 +247,12 @@ class GamerViewModelTest {
     @Test
     fun `handleFunctionCall ignores unknown function`() {
         viewModel.handleFunctionCall(
-            FunctionCallPart("setEmotion", mapOf("emotion" to JsonPrimitive("HAPPY"))),
+            FunctionCallPart("setEmotion_HAPPY", emptyMap()),
         )
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
 
         val response = viewModel.handleFunctionCall(
-            FunctionCallPart("unknownFunction", mapOf("arg" to JsonPrimitive("value"))),
+            FunctionCallPart("unknownFunction", emptyMap()),
         )
         // Emotion should not change
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)

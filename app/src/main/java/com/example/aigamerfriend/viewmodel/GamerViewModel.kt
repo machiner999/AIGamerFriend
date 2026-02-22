@@ -58,6 +58,8 @@ class GamerViewModel : ViewModel() {
         private const val SESSION_DURATION_MS = 110_000L // 1min 50sec (10sec before 2min limit)
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
+        private const val JPEG_QUALITY = 60
+        private const val FRAME_BUFFER_SIZE = 32_768 // 32KB — expected JPEG size after downscale
     }
 
     private val _sessionState = MutableStateFlow<SessionState>(SessionState.Idle)
@@ -198,8 +200,8 @@ class GamerViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                val stream = ByteArrayOutputStream()
-                frame.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                val stream = ByteArrayOutputStream(FRAME_BUFFER_SIZE)
+                frame.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
                 val jpegBytes = stream.toByteArray()
                 handle.sendVideoRealtime(InlineData(jpegBytes, "image/jpeg"))
             } catch (e: Exception) {

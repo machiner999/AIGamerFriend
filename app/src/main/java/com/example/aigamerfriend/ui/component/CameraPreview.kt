@@ -52,6 +52,7 @@ fun CameraPreview(
                 val imageAnalysis =
                     ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setTargetResolution(android.util.Size(640, 480))
                         .build()
                         .also {
                             it.setAnalyzer(cameraExecutor, SnapshotFrameAnalyzer(onFrameCaptured))
@@ -77,6 +78,16 @@ fun CameraPreview(
 internal fun shouldCaptureFrame(now: Long, lastCaptureTimeMs: Long, captureIntervalMs: Long): Boolean =
     now - lastCaptureTimeMs >= captureIntervalMs
 
+@VisibleForTesting
+internal fun downscaleBitmap(bitmap: Bitmap, targetShortSide: Int): Bitmap {
+    val shortSide = minOf(bitmap.width, bitmap.height)
+    if (shortSide <= targetShortSide) return bitmap
+    val scale = targetShortSide.toFloat() / shortSide
+    val newWidth = (bitmap.width * scale).toInt()
+    val newHeight = (bitmap.height * scale).toInt()
+    return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+}
+
 private class SnapshotFrameAnalyzer(
     private val onFrameCaptured: (Bitmap) -> Unit,
 ) : ImageAnalysis.Analyzer {
@@ -92,7 +103,10 @@ private class SnapshotFrameAnalyzer(
             // ImageProxy from back camera may need rotation
             val rotated = rotateBitmap(bitmap, imageProxy.imageInfo.rotationDegrees.toFloat())
             if (rotated !== bitmap) bitmap.recycle()
-            onFrameCaptured(rotated)
+            // Downscale to reduce payload size for faster Gemini response
+            val scaled = downscaleBitmap(rotated, TARGET_SHORT_SIDE)
+            if (scaled !== rotated) rotated.recycle()
+            onFrameCaptured(scaled)
         }
         imageProxy.close()
     }
@@ -104,5 +118,9 @@ private class SnapshotFrameAnalyzer(
         if (degrees == 0f) return bitmap
         val matrix = Matrix().apply { postRotate(degrees) }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    companion object {
+        private const val TARGET_SHORT_SIDE = 512
     }
 }
