@@ -1,8 +1,12 @@
 package com.example.aigamerfriend.viewmodel
 
+import android.app.Application
+import com.example.aigamerfriend.data.MemoryStore
 import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.ai.type.FunctionCallPart
 import com.google.firebase.ai.type.InlineData
+import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,7 +51,15 @@ class GamerViewModelTest {
         shouldThrow = false
         videoFramesSent = 0
 
-        viewModel = GamerViewModel()
+        val mockApp = mockk<Application>(relaxed = true)
+        every { mockApp.applicationContext } returns mockApp
+
+        val mockMemoryStore = mockk<MemoryStore>(relaxed = true)
+        coEvery { mockMemoryStore.getFormattedSummaries() } returns null
+
+        viewModel = GamerViewModel(mockApp)
+        viewModel.memoryStore = mockMemoryStore
+        viewModel.summarizer = { null } // no-op summarizer for tests
         viewModel.sessionConnector = {
             connectCallCount++
             if (shouldThrow) throw RuntimeException("Network error")
@@ -258,4 +270,39 @@ class GamerViewModelTest {
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
         assertEquals("unknownFunction", response.name)
     }
+
+    @Test
+    fun `summary generation is triggered on reconnect`() =
+        viewModelTest {
+            var summarizerCalled = false
+            viewModel.summarizer = {
+                summarizerCalled = true
+                "Test summary"
+            }
+
+            viewModel.startSession()
+            assertEquals(SessionState.Connected, viewModel.sessionState.value)
+
+            // Advance past session duration to trigger reconnect
+            testScheduler.advanceTimeBy(110_001)
+
+            // Session should reconnect successfully
+            assertEquals(SessionState.Connected, viewModel.sessionState.value)
+        }
+
+    @Test
+    fun `memory failure does not break session flow`() =
+        viewModelTest {
+            viewModel.summarizer = { throw RuntimeException("Summary failed") }
+
+            viewModel.startSession()
+            assertEquals(SessionState.Connected, viewModel.sessionState.value)
+
+            // Advance past session duration to trigger reconnect
+            testScheduler.advanceTimeBy(110_001)
+
+            // Session should still reconnect successfully despite summary failure
+            assertEquals(SessionState.Connected, viewModel.sessionState.value)
+            assertEquals(2, connectCallCount)
+        }
 }

@@ -30,11 +30,13 @@ For release builds, create `keystore.properties` in the project root with `store
 
 ## Architecture
 
-Single-screen app with one ViewModel. No navigation, no database, no repository layer.
+Single-screen app with one ViewModel. No navigation, no database, no repository layer (DataStore used only for lightweight session memory).
 
 **Data flow**: `CameraPreview` captures frames at 1FPS, downscales to 512px short side → `GamerViewModel.sendVideoFrame()` compresses to JPEG (quality 60) and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
 
-**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, the system prompt is re-sent so character is preserved, but conversation context is lost. On network errors, retries up to 3 times with linear backoff (`RETRY_BASE_DELAY_MS * retryCount`, starting at 2s).
+**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, a summary of the session is generated from buffered video frames and stored via `MemoryStore`, then the system prompt is re-sent with past session summaries so the AI can reference earlier conversations. On network errors, retries up to 3 times with linear backoff (`RETRY_BASE_DELAY_MS * retryCount`, starting at 2s).
+
+**Memory system** (`MemoryStore` + `GamerViewModel`): On each reconnect, the last 5 buffered video frames are sent to a non-live `GenerativeModel` (`gemini-2.5-flash`) to generate a 1-2 sentence Japanese summary. Summaries are stored in DataStore Preferences as a JSON array (max 10 entries, each truncated to 200 chars). On session connect, stored summaries are appended to the system prompt under a `## これまでの記憶` section. All memory operations are non-fatal — failures are logged and silently skipped. `MemoryStore` is injectable via `@VisibleForTesting internal var memoryStore`, and the summarizer via `@VisibleForTesting internal var summarizer` lambda.
 
 **State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
 
@@ -54,7 +56,7 @@ Single-screen app with one ViewModel. No navigation, no database, no repository 
 
 Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Both `SessionHandle` (`@VisibleForTesting internal interface`) and `SessionState` sealed interface are defined in `GamerViewModel.kt`. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
 
-Test files: `GamerViewModelTest.kt` (session lifecycle, retries, emotion handling), `GamerScreenKtTest.kt` (haptic logic, state helpers), `AIFaceKtTest.kt` (emotion param mapping), `StatusOverlayKtTest.kt` (overlay state mapping), `CameraPreviewKtTest.kt` (frame throttle timing), `EmotionTest.kt` (enum parsing), `PermissionHelperTest.kt` (permission checks).
+Test files: `GamerViewModelTest.kt` (session lifecycle, retries, emotion handling, memory integration), `GamerScreenKtTest.kt` (haptic logic, state helpers), `AIFaceKtTest.kt` (emotion param mapping), `StatusOverlayKtTest.kt` (overlay state mapping), `CameraPreviewKtTest.kt` (frame throttle timing), `EmotionTest.kt` (enum parsing), `PermissionHelperTest.kt` (permission checks), `MemoryStoreTest.kt` (add/get/clear/capacity/truncation).
 
 Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` / `downscaleBitmap()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
 

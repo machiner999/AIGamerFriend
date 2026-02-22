@@ -1,13 +1,17 @@
 package com.example.aigamerfriend.viewmodel
 
+import android.app.Application
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.annotation.VisibleForTesting
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.aigamerfriend.data.MemoryStore
+import com.example.aigamerfriend.memoryDataStore
 import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.Content
 import com.google.firebase.ai.type.FunctionCallPart
 import com.google.firebase.ai.type.FunctionDeclaration
 import com.google.firebase.ai.type.FunctionResponsePart
@@ -52,16 +56,18 @@ internal interface SessionHandle {
 }
 
 @OptIn(PublicPreviewAPI::class)
-class GamerViewModel : ViewModel() {
+class GamerViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "GamerViewModel"
         private const val MODEL_NAME = "gemini-2.5-flash-native-audio-preview-12-2025"
+        private const val SUMMARY_MODEL_NAME = "gemini-2.5-flash"
         private const val SESSION_DURATION_MS = 110_000L // 1min 50sec (10sec before 2min limit)
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
         private const val JPEG_QUALITY = 60
         private const val CONNECT_TIMEOUT_MS = 15_000L // 15sec timeout for connect
         private const val FRAME_BUFFER_SIZE = 32_768 // 32KB — expected JPEG size after downscale
+        private const val MAX_RECENT_FRAMES = 5
     }
 
     private val _sessionState = MutableStateFlow<SessionState>(SessionState.Idle)
@@ -73,6 +79,19 @@ class GamerViewModel : ViewModel() {
     private var sessionHandle: SessionHandle? = null
     private var sessionTimerJob: Job? = null
     private var retryCount = 0
+
+    private val recentFrames = ArrayDeque<ByteArray>(MAX_RECENT_FRAMES)
+
+    @VisibleForTesting
+    internal var memoryStore: MemoryStore = MemoryStore(application.memoryDataStore)
+
+    @VisibleForTesting
+    internal var summarizer: (suspend (List<ByteArray>) -> String?)? = null
+
+    private val summaryModel by lazy {
+        Firebase.ai(backend = GenerativeBackend.googleAI())
+            .generativeModel(SUMMARY_MODEL_NAME)
+    }
 
     private val emotionFunctions = Emotion.entries.map { emotion ->
         FunctionDeclaration(
@@ -90,7 +109,7 @@ class GamerViewModel : ViewModel() {
         )
     }
 
-    private val systemPrompt =
+    private val baseSystemPrompt =
         """
         あなたは「ユウ」。ユーザーの隣に座って一緒にゲームを見ている友達。ゲームは好きだけど自分はそこまで上手くない。明るくてリアクションが大きい。
 
@@ -122,7 +141,14 @@ class GamerViewModel : ViewModel() {
         setEmotion_HAPPY:褒める・楽しい / setEmotion_EXCITED:すごいプレイ・勝利 / setEmotion_SURPRISED:予想外の展開 / setEmotion_THINKING:考え中・悩み中 / setEmotion_WORRIED:ピンチ・危険 / setEmotion_SAD:ゲームオーバー・残念 / setEmotion_NEUTRAL:落ち着いている
         """.trimIndent()
 
-    private val liveModel by lazy {
+    private fun buildSystemPrompt(memorySummary: String?): String {
+        if (memorySummary == null) return baseSystemPrompt
+        return baseSystemPrompt + "\n\n## これまでの記憶\n" +
+            "以下は過去のセッションの要約。同じリアクションを繰り返さず、自然に言及しろ。\n" +
+            memorySummary
+    }
+
+    private fun createLiveModel(memorySummary: String?) =
         Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(
             modelName = MODEL_NAME,
             generationConfig =
@@ -132,9 +158,8 @@ class GamerViewModel : ViewModel() {
                 },
             // TODO: Re-enable tools once Firebase AI SDK fixes parameters_json_schema serialization
             // tools = listOf(Tool.googleSearch(), Tool.functionDeclarations(emotionFunctions)),
-            systemInstruction = content { text(systemPrompt) },
+            systemInstruction = content { text(buildSystemPrompt(memorySummary)) },
         )
-    }
 
     @VisibleForTesting
     internal var sessionConnector: (suspend () -> SessionHandle)? = null
@@ -157,9 +182,10 @@ class GamerViewModel : ViewModel() {
         }
     }
 
-    private suspend fun openSession(): SessionHandle {
+    private suspend fun openSession(memorySummary: String?): SessionHandle {
         sessionConnector?.let { return it() }
-        val session = liveModel.connect()
+        val model = createLiveModel(memorySummary)
+        val session = model.connect()
         session.startAudioConversation(::handleFunctionCall)
         return object : SessionHandle {
             override fun stopAudioConversation() = session.stopAudioConversation()
@@ -190,6 +216,7 @@ class GamerViewModel : ViewModel() {
         }
         sessionHandle = null
         retryCount = 0
+        recentFrames.clear()
         _currentEmotion.value = Emotion.NEUTRAL
         _sessionState.value = SessionState.Idle
     }
@@ -205,6 +232,13 @@ class GamerViewModel : ViewModel() {
                 val stream = ByteArrayOutputStream(FRAME_BUFFER_SIZE)
                 frame.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
                 val jpegBytes = stream.toByteArray()
+
+                // Buffer frame for summary generation
+                if (recentFrames.size >= MAX_RECENT_FRAMES) {
+                    recentFrames.removeFirst()
+                }
+                recentFrames.addLast(jpegBytes.copyOf())
+
                 handle.sendVideoRealtime(InlineData(jpegBytes, "image/jpeg"))
             } catch (e: Exception) {
                 Log.w(TAG, "Error sending video frame", e)
@@ -217,12 +251,18 @@ class GamerViewModel : ViewModel() {
     private suspend fun connectSession() {
         _sessionState.value = SessionState.Connecting
         try {
-            val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession() }
+            val memorySummary = try {
+                memoryStore.getFormattedSummaries()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read memory, continuing without it", e)
+                null
+            }
+            val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession(memorySummary) }
             sessionHandle = handle
             _sessionState.value = SessionState.Connected
             retryCount = 0
             startSessionTimer()
-            Log.d(TAG, "Session connected")
+            Log.d(TAG, "Session connected" + if (memorySummary != null) " (with memory)" else "")
         } catch (e: CancellationException) {
             if (e is kotlinx.coroutines.TimeoutCancellationException) {
                 Log.e(TAG, "Session connect timed out after ${CONNECT_TIMEOUT_MS}ms")
@@ -247,6 +287,8 @@ class GamerViewModel : ViewModel() {
     }
 
     private fun reconnect() {
+        generateAndStoreSummary()
+
         val previousHandle = sessionHandle
         sessionHandle = null
         _sessionState.value = SessionState.Reconnecting
@@ -266,6 +308,39 @@ class GamerViewModel : ViewModel() {
                 handleConnectionError(e)
             }
         }
+    }
+
+    private fun generateAndStoreSummary() {
+        val frames = recentFrames.toList()
+        if (frames.isEmpty()) return
+
+        viewModelScope.launch {
+            try {
+                val summaryText = summarizer?.invoke(frames) ?: generateSummaryFromFrames(frames)
+                if (!summaryText.isNullOrBlank()) {
+                    memoryStore.addSummary(summaryText)
+                    Log.d(TAG, "Session summary saved: ${summaryText.take(50)}...")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to generate/store summary", e)
+            }
+        }
+    }
+
+    private suspend fun generateSummaryFromFrames(frames: List<ByteArray>): String? {
+        val prompt = content {
+            frames.forEach { jpeg ->
+                inlineData(jpeg, "image/jpeg")
+            }
+            text(
+                "これらのゲーム画面のスクリーンショットから、ユーザーがプレイしていたゲームと" +
+                    "何が起きていたかを1〜2文の日本語で要約しろ。ゲーム名が分かれば含めろ。",
+            )
+        }
+        val response = summaryModel.generateContent(prompt)
+        return response.text?.trim()
     }
 
     private fun handleConnectionError(e: Exception) {
