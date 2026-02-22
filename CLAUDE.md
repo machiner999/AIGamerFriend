@@ -32,7 +32,7 @@ For release builds, create `keystore.properties` in the project root with `store
 
 Single-screen app with one ViewModel. No navigation, no database, no repository layer.
 
-**Data flow**: `CameraPreview` captures frames at 1FPS → `GamerViewModel.sendVideoFrame()` compresses to JPEG (quality 80) and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
+**Data flow**: `CameraPreview` captures frames at 1FPS, downscales to 512px short side → `GamerViewModel.sendVideoFrame()` compresses to JPEG (quality 60) and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
 
 **Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, the system prompt is re-sent so character is preserved, but conversation context is lost. On network errors, retries up to 3 times with linear backoff (`RETRY_BASE_DELAY_MS * retryCount`, starting at 2s).
 
@@ -56,7 +56,7 @@ Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Fire
 
 Test files: `GamerViewModelTest.kt` (session lifecycle, retries, emotion handling), `GamerScreenKtTest.kt` (haptic logic, state helpers), `AIFaceKtTest.kt` (emotion param mapping), `StatusOverlayKtTest.kt` (overlay state mapping), `CameraPreviewKtTest.kt` (frame throttle timing), `EmotionTest.kt` (enum parsing), `PermissionHelperTest.kt` (permission checks).
 
-Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
+Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` / `downscaleBitmap()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
 
 Test dependencies: JUnit 4, MockK, kotlinx-coroutines-test. The `testOptions.unitTests.isReturnDefaultValues = true` flag is set so Android framework classes (like `Log`) return defaults in unit tests.
 

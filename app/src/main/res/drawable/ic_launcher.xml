@@ -3,14 +3,5 @@
     <background>
         <color android:color="#121212" />
     </background>
-    <foreground>
-        <inset android:insetTop="25%"
-               android:insetBottom="25%"
-               android:insetLeft="25%"
-               android:insetRight="25%">
-            <shape android:shape="oval">
-                <solid android:color="#39FF14" />
-            </shape>
-        </inset>
-    </foreground>
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>
