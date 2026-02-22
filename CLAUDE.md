@@ -1,87 +1,87 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+このファイルは、Claude Code (claude.ai/code) がこのリポジトリのコードを扱う際のガイダンスを提供する。
 
-## What This Is
+## 概要
 
-Android app that watches game screens via the device's back camera and reacts like a casual gaming friend using voice. Uses Gemini Multimodal Live API through Firebase AI Logic SDK for real-time bidirectional audio+video streaming. Displays an animated face that reflects the AI's emotions via function calling.
+デバイスの背面カメラでゲーム画面を見て、カジュアルなゲーム友達として音声でリアクションするAndroidアプリ。Firebase AI Logic SDK経由でGemini Multimodal Live APIを使い、リアルタイム双方向の音声+映像ストリーミングを行う。Function Callingを通じてAIの感情を反映するアニメーション顔を表示する。
 
-## Build Commands
+## ビルドコマンド
 
 ```bash
-./gradlew assembleDebug          # Debug build
-./gradlew assembleRelease        # Release build
-./gradlew clean                  # Clean build artifacts
-./gradlew ktlintCheck            # Lint check (ktlint via jlleitschuh plugin)
-./gradlew ktlintFormat           # Lint auto-fix
-./gradlew testDebugUnitTest      # Run all unit tests
+./gradlew assembleDebug          # デバッグビルド
+./gradlew assembleRelease        # リリースビルド
+./gradlew clean                  # ビルド成果物のクリーン
+./gradlew ktlintCheck            # Lintチェック（jlleitschuhプラグイン経由のktlint）
+./gradlew ktlintFormat           # Lint自動修正
+./gradlew testDebugUnitTest      # 全ユニットテスト実行
 ```
 
-Run a single test class:
+単一テストクラスの実行:
 ```bash
 ./gradlew testDebugUnitTest --tests "com.example.aigamerfriend.viewmodel.GamerViewModelTest"
 ```
 
-## Prerequisites
+## 前提条件
 
-A real `app/google-services.json` from Firebase Console is required (the placeholder in the repo won't connect to Gemini). It is gitignored. CI generates a dummy one for build verification.
+Firebase Consoleから取得した実際の `app/google-services.json` が必要（リポジトリ内のプレースホルダーではGeminiに接続できない）。gitignore済み。CIではビルド検証用にダミーを生成する。
 
-For release builds, create `keystore.properties` in the project root with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`. Both `keystore.properties` and `*.jks` are gitignored. If the file is absent, `assembleRelease` builds an unsigned APK (CI uses this path).
+リリースビルドには、プロジェクトルートに `keystore.properties`（`storeFile`、`storePassword`、`keyAlias`、`keyPassword`）を作成する。`keystore.properties` と `*.jks` はどちらもgitignore済み。ファイルがなければ `assembleRelease` は署名なしAPKをビルドする（CIはこのパスを使用）。
 
-## Architecture
+## アーキテクチャ
 
-Single-screen app with one ViewModel. No navigation, no database, no repository layer (DataStore used only for lightweight session memory).
+単一画面・単一ViewModelのアプリ。ナビゲーション、データベース、リポジトリ層なし（DataStoreは軽量なセッション記憶にのみ使用）。
 
-**Data flow**: `CameraPreview` captures frames at 1FPS, downscales to 512px short side → `GamerViewModel.sendVideoFrame()` compresses to JPEG (quality 60) and sends via `LiveSession.sendVideoRealtime()` → Gemini responds with audio played back through `startAudioConversation(::handleFunctionCall)` which handles mic input, speaker output, and function calls.
+**データフロー**: `CameraPreview` が1FPSでフレームをキャプチャし、短辺512pxにダウンスケール → `GamerViewModel.sendVideoFrame()` がJPEG（quality 60）に圧縮して `LiveSession.sendVideoRealtime()` で送信 → Geminiが音声で応答し、`startAudioConversation(::handleFunctionCall)` を通じて再生（マイク入力、スピーカー出力、Function Callingを処理）。
 
-**Session lifecycle** (`GamerViewModel`): The Gemini Live API has a hard 2-minute session limit. `GamerViewModel` runs a timer and proactively reconnects at 1:50 (see `SESSION_DURATION_MS = 110_000L`). On reconnect, a summary of the session is generated from buffered video frames and stored via `MemoryStore`, then the system prompt is re-sent with past session summaries so the AI can reference earlier conversations. On network errors, retries up to 3 times with linear backoff (`RETRY_BASE_DELAY_MS * retryCount`, starting at 2s).
+**セッションライフサイクル** (`GamerViewModel`): Gemini Live APIには2分のハードリミットがある。`GamerViewModel` がタイマーを動かし、1:50で能動的に再接続する（`SESSION_DURATION_MS = 110_000L`）。再接続時、バッファされた映像フレームからセッション要約を生成して `MemoryStore` に保存し、過去のセッション要約付きでシステムプロンプトを再送信して、AIが以前の会話を参照できるようにする。ネットワークエラー時は線形バックオフで最大3回リトライ（`RETRY_BASE_DELAY_MS * retryCount`、2秒から開始）。
 
-**Memory system** (`MemoryStore` + `GamerViewModel`): On each reconnect, the last 5 buffered video frames are sent to a non-live `GenerativeModel` (`gemini-2.5-flash`) to generate a 1-2 sentence Japanese summary. Summaries are stored in DataStore Preferences as a JSON array (max 10 entries, each truncated to 200 chars). On session connect, stored summaries are appended to the system prompt under a `## これまでの記憶` section. All memory operations are non-fatal — failures are logged and silently skipped. `MemoryStore` is injectable via `@VisibleForTesting internal var memoryStore`, and the summarizer via `@VisibleForTesting internal var summarizer` lambda.
+**記憶システム** (`MemoryStore` + `GamerViewModel`): 再接続ごとに、直近5フレームのバッファされた映像をnon-liveの `GenerativeModel`（`gemini-2.5-flash`）に送信し、1〜2文の日本語要約を生成する。要約はDataStore PreferencesにJSON配列として保存（最大10件、各200文字で切り詰め）。セッション接続時、保存済み要約をシステムプロンプトの `## これまでの記憶` セクションに追加する。記憶関連の操作はすべて非致命的 — 失敗時はログに記録して静かにスキップする。`MemoryStore` は `@VisibleForTesting internal var memoryStore` で注入可能、要約生成は `@VisibleForTesting internal var summarizer` ラムダで注入可能。
 
-**State machine** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected` (normal loop) or `→ Error` (after max retries). Video frames are only sent in `Connected` state; frames during other states are silently dropped.
+**ステートマシン** (`SessionState`): `Idle → Connecting → Connected → Reconnecting → Connected`（通常ループ）または `→ Error`（最大リトライ超過後）。映像フレームは `Connected` 状態でのみ送信され、他の状態中のフレームは静かに破棄される。
 
-**UI layout**: Full-screen camera preview with overlays. `StatusOverlay` (top-left, glass morphism) shows connection state. `AIFace` (bottom-center, above controls) shows when Connected. `GlassControlPanel` (bottom-anchored row) has status text + start/stop button with `WindowInsets.safeDrawing` support. All overlays use semi-transparent black backgrounds with subtle white borders.
+**UIレイアウト**: フルスクリーンカメラプレビューにオーバーレイを重ねる構成。`StatusOverlay`（左上、グラスモーフィズム）が接続状態を表示。`AIFace`（下部中央、コントロールの上）がConnected時に表示。`GlassControlPanel`（下部固定の横並び行）にステータステキスト＋開始/停止ボタンを配置し、`WindowInsets.safeDrawing` に対応。全オーバーレイは半透明黒背景に控えめな白ボーダー。
 
-**Emotion system**: Gemini calls parameterless functions like `setEmotion_HAPPY`, `setEmotion_SAD`, etc. via function calling to update the AI's facial expression. These are defined as `emotionFunctions` (one `FunctionDeclaration` per emotion, all with `parameters = emptyMap()`). The `handleFunctionCall()` method in `GamerViewModel` extracts the emotion name from the function name prefix (`setEmotion_`), updates `_currentEmotion: StateFlow<Emotion>`, and `AIFace` composable animates between states using spring physics. The face renders on a Canvas with neon-green eyes/eyebrows/mouth on a semi-transparent black circle with a neon glow halo, shown only when Connected. `AIFace` has a breathing animation (subtle scale oscillation via `rememberInfiniteTransition`) and a bounce effect on emotion changes (via `Animatable` spring). Seven emotions: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD. Note: emotion functions are currently disabled (see "Tools are currently disabled" below).
+**感情システム**: Geminiがパラメータなし関数 `setEmotion_HAPPY`、`setEmotion_SAD` 等をFunction Callingで呼び出し、AIの表情を更新する。`emotionFunctions`（感情ごとに1つの `FunctionDeclaration`、すべて `parameters = emptyMap()`）として定義。`GamerViewModel` の `handleFunctionCall()` が関数名プレフィックス（`setEmotion_`）から感情名を抽出し、`_currentEmotion: StateFlow<Emotion>` を更新。`AIFace` コンポーザブルがスプリング物理でステート間をアニメーションする。Canvasにネオングリーンの目/眉/口を半透明黒円の上に描画し、ネオングローのハロー付き。Connected時のみ表示。`AIFace` は呼吸アニメーション（`rememberInfiniteTransition` による微妙なスケール振動）と感情変化時のバウンスエフェクト（`Animatable` スプリング）を持つ。7つの感情: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD。注意: 感情関数は現在無効化されている（下記「ツールは現在無効」を参照）。
 
-**Haptic feedback**: `LaunchedEffect` monitors `sessionState` and `currentEmotion` changes. `hapticForSessionTransition()` returns CONFIRM on connection, REJECT on error. `hapticForEmotionChange()` returns TICK on any emotion change. Uses API 30+ haptic constants with fallback for older devices.
+**触覚フィードバック**: `LaunchedEffect` が `sessionState` と `currentEmotion` の変化を監視。`hapticForSessionTransition()` は接続時にCONFIRM、エラー時にREJECTを返す。`hapticForEmotionChange()` は感情変化時にTICKを返す。API 30+の触覚定数を使用し、古いデバイスにはフォールバック。
 
-**Firebase AI Logic SDK specifics**: All Live API types require `@OptIn(PublicPreviewAPI::class)`. The `liveModel` is initialized lazily via `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`. Audio I/O is fully managed by `startAudioConversation()` / `stopAudioConversation()`. The voice is `Voice("AOEDE")`. Function calling types (`FunctionCallPart`, `FunctionResponsePart`, `JsonObject`) come from `kotlinx-serialization-json`, which must be an explicit dependency since Firebase AI exposes these types but doesn't transitively export the library.
+**Firebase AI Logic SDK固有事項**: 全Live API型に `@OptIn(PublicPreviewAPI::class)` が必要。`liveModel` は `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)` で遅延初期化される。音声I/Oは `startAudioConversation()` / `stopAudioConversation()` で完全に管理される。音声は `Voice("AOEDE")`。Function Calling型（`FunctionCallPart`、`FunctionResponsePart`、`JsonObject`）は `kotlinx-serialization-json` から来るが、Firebase AIがこれらの型を公開APIで使用しつつも推移的にエクスポートしないため、明示的な依存として必要。
 
-**Tools are currently disabled** (commented out in `liveModel` config): Firebase AI Logic SDK serializes `FunctionDeclaration.parameters` as `parameters_json_schema`, which the Gemini Live API rejects (`"parameters_json_schema must not be set"`). This affects ALL tool types including `Tool.googleSearch()` and `Tool.functionDeclarations()`. Both firebase-ai 17.8.0 and 17.9.0 (BOM 34.9.0) have this issue. The Firebase docs state Live API tool support is "coming soon" (https://firebase.google.com/docs/ai-logic/live-api). The emotion function definitions (`emotionFunctions`) and handler (`handleFunctionCall`) are still in the code, ready to be re-enabled. To restore tools, uncomment the `tools = listOf(...)` line in `liveModel` initialization. The Gemini Live API itself does support function calling — the BrewingCoffe project (same author) works around this by using raw WebSocket (OkHttp) instead of the Firebase SDK, sending `parameters` directly in the correct format. firebase-ai is pinned to `17.8.0!!` (strict) to avoid BOM override; 17.9.0 breaks even without tools in some configurations.
+**ツールは現在無効**（`liveModel` 設定でコメントアウト済み）: Firebase AI Logic SDKが `FunctionDeclaration.parameters` を `parameters_json_schema` としてシリアライズするが、Gemini Live APIはこれを拒否する（`"parameters_json_schema must not be set"`）。`Tool.googleSearch()` と `Tool.functionDeclarations()` を含む全ツール型に影響する。firebase-ai 17.8.0と17.9.0（BOM 34.9.0）の両方にこの問題がある。Firebaseドキュメントでは Live APIのツールサポートは「coming soon」とされている (https://firebase.google.com/docs/ai-logic/live-api)。感情関数の定義（`emotionFunctions`）とハンドラ（`handleFunctionCall`）はコード内に残っており、再有効化可能。ツールを復元するには `liveModel` 初期化の `tools = listOf(...)` 行のコメントを解除する。Gemini Live API自体はFunction Callingをサポートしている — BrewingCoffeプロジェクト（同作者）はFirebase SDKの代わりに生WebSocket（OkHttp）を使い、`parameters` を正しい形式で直接送信することで回避している。firebase-aiは `17.8.0!!`（strict）に固定してBOMによる上書きを防止。17.9.0はツールなしでも一部の構成で壊れる。
 
-**Build toolchain**: AGP 9.0.1 / Gradle 9.3.1 with built-in Kotlin (no `org.jetbrains.kotlin.android` plugin). Kotlin compilation is handled by AGP directly. The Compose compiler plugin (`org.jetbrains.kotlin.plugin.compose` v2.2.10) is still applied separately. The Gemini model is `gemini-2.5-flash-native-audio-preview-12-2025` (preview — may need updating).
+**ビルドツールチェーン**: AGP 9.0.1 / Gradle 9.3.1、Kotlin内蔵（`org.jetbrains.kotlin.android` プラグインなし）。KotlinコンパイルはAGPが直接処理する。Composeコンパイラプラグイン（`org.jetbrains.kotlin.plugin.compose` v2.2.10）は別途適用。Geminiモデルは `gemini-2.5-flash-native-audio-preview-12-2025`（プレビュー版 — 更新が必要になる可能性あり）。
 
-## Testing
+## テスト
 
-Tests use `SessionHandle` interface + `sessionConnector` lambda to stub the Firebase Live API without mocking the SDK. Both `SessionHandle` (`@VisibleForTesting internal interface`) and `SessionState` sealed interface are defined in `GamerViewModel.kt`. Set `viewModel.sessionConnector` to a lambda returning a fake `SessionHandle` in tests. See `GamerViewModelTest.kt` for the pattern.
+テストは `SessionHandle` インターフェース + `sessionConnector` ラムダを使い、SDKをモックせずにFirebase Live APIをスタブ化する。`SessionHandle`（`@VisibleForTesting internal interface`）と `SessionState` sealed interfaceはどちらも `GamerViewModel.kt` に定義。テストでは `viewModel.sessionConnector` に偽の `SessionHandle` を返すラムダをセットする。パターンは `GamerViewModelTest.kt` を参照。
 
-Test files: `GamerViewModelTest.kt` (session lifecycle, retries, emotion handling, memory integration), `GamerScreenKtTest.kt` (haptic logic, state helpers), `AIFaceKtTest.kt` (emotion param mapping), `StatusOverlayKtTest.kt` (overlay state mapping), `CameraPreviewKtTest.kt` (frame throttle timing), `EmotionTest.kt` (enum parsing), `PermissionHelperTest.kt` (permission checks), `MemoryStoreTest.kt` (add/get/clear/capacity/truncation).
+テストファイル: `GamerViewModelTest.kt`（セッションライフサイクル、リトライ、感情処理、記憶統合）、`GamerScreenKtTest.kt`（触覚ロジック、状態ヘルパー）、`AIFaceKtTest.kt`（感情パラメータマッピング）、`StatusOverlayKtTest.kt`（オーバーレイ状態マッピング）、`CameraPreviewKtTest.kt`（フレームスロットルタイミング）、`EmotionTest.kt`（enumパース）、`PermissionHelperTest.kt`（パーミッションチェック）、`MemoryStoreTest.kt`（追加/取得/クリア/容量制限/切り詰め）。
 
-Several source functions are marked `@VisibleForTesting internal` to enable unit testing of otherwise private logic (e.g. `paramsFor()` in AIFace, `statusOverlayInfo()` in StatusOverlay, `shouldCaptureFrame()` / `downscaleBitmap()` in CameraPreview, `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType` in GamerScreen). Only use `testDebugUnitTest` — no release unit test variant exists.
+いくつかのソース関数は `@VisibleForTesting internal` マークされており、本来privateなロジックのユニットテストを可能にしている（例: AIFaceの `paramsFor()`、StatusOverlayの `statusOverlayInfo()`、CameraPreviewの `shouldCaptureFrame()` / `downscaleBitmap()`、GamerScreenの `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType`）。`testDebugUnitTest` のみ使用 — releaseユニットテストバリアントは存在しない。
 
-Test dependencies: JUnit 4, MockK, kotlinx-coroutines-test. The `testOptions.unitTests.isReturnDefaultValues = true` flag is set so Android framework classes (like `Log`) return defaults in unit tests.
+テスト依存: JUnit 4、MockK、kotlinx-coroutines-test。`testOptions.unitTests.isReturnDefaultValues = true` フラグが設定されており、Androidフレームワーククラス（`Log` 等）がユニットテストでデフォルト値を返す。
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintCheck → testDebugUnitTest → assembleRelease. It generates a dummy `google-services.json` so the Google Services plugin doesn't fail.
+GitHub Actions（`.github/workflows/ci.yml`）が `main` へのpush/PRで実行: ktlintCheck → testDebugUnitTest → assembleRelease。Google Servicesプラグインが失敗しないよう、ダミーの `google-services.json` を生成する。
 
-## Key Constraints
+## 主な制約
 
-- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — landscape orientation only
-- Session auto-reconnects at 1:50 — do not extend `SESSION_DURATION_MS` beyond 120_000
-- CameraX dependency is alpha (`1.5.0-alpha06`) — may receive breaking API changes on update
-- Frame rate is throttled in `SnapshotFrameAnalyzer.captureIntervalMs` — keep at 1000ms or higher
-- System prompt is in Japanese (the AI character speaks Japanese)
-- `app/google-services.json` must never be committed (contains API keys). Must be downloaded from Firebase Console for the correct package name (`com.example.aigamerfriend`) — do not manually edit the package name in the JSON
-- The Google Cloud API key must have the Generative Language API enabled. Android application restrictions on the API key must include the release APK's SHA-1 fingerprint, or be set to "None" for testing
-- AGP 9.0 uses built-in Kotlin — do not add `org.jetbrains.kotlin.android` plugin (it is incompatible with AGP 9.0's internal classes)
-- `kotlinx-serialization-json` must remain an explicit dependency — Firebase AI SDK uses these types in its public API but does not export them transitively
+- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — 横画面固定
+- セッションは1:50で自動再接続 — `SESSION_DURATION_MS` を120_000超に延長しないこと
+- CameraX依存はalpha版（`1.5.0-alpha06`） — 更新時に破壊的API変更の可能性あり
+- フレームレートは `SnapshotFrameAnalyzer.captureIntervalMs` でスロットル — 1000ms以上を維持
+- システムプロンプトは日本語（AIキャラクターは日本語で話す）
+- `app/google-services.json` は絶対にコミットしないこと（APIキーを含む）。正しいパッケージ名（`com.example.aigamerfriend`）のFirebase Consoleからダウンロード必須 — JSON内のパッケージ名を手動編集しないこと
+- Google Cloud APIキーにはGenerative Language APIの有効化が必要。APIキーのAndroidアプリケーション制限にリリースAPKのSHA-1フィンガープリントを含めるか、テスト用に「なし」に設定
+- AGP 9.0は内蔵Kotlinを使用 — `org.jetbrains.kotlin.android` プラグインを追加しないこと（AGP 9.0の内部クラスと非互換）
+- `kotlinx-serialization-json` は明示的な依存として残す必要がある — Firebase AI SDKが公開APIでこれらの型を使用するが推移的にエクスポートしない
 
-## Conventions
+## 規約
 
-- UI strings are hardcoded in Japanese (no string resources for now)
-- StateFlow collected with `collectAsStateWithLifecycle` in Compose
-- JVM toolchain 17
-- ktlint enforced via `.editorconfig`: max line length 120, wildcard imports allowed, Composable function naming exempt
-- Note: `ktlintCheck` only lints `.kts` files due to AGP 9 built-in Kotlin not registering source sets with the ktlint plugin. Source/test Kotlin files are not currently linted by CI.
+- UI文字列は日本語でハードコード（現時点ではstring resourcesなし）
+- ComposeではStateFlowを `collectAsStateWithLifecycle` で収集
+- JVMツールチェーン 17
+- ktlintは `.editorconfig` で強制: 最大行長120、ワイルドカードインポート許可、Composable関数の命名規則を免除
+- 注意: AGP 9の内蔵Kotlinがktlintプラグインにソースセットを登録しないため、`ktlintCheck` は `.kts` ファイルのみリントする。ソース/テストのKotlinファイルは現在CIでリントされていない
