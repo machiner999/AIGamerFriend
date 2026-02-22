@@ -66,7 +66,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push/PR to `main`: ktlintChe
 
 ## Key Constraints
 
-- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — portrait orientation only
+- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — landscape orientation only
 - Session auto-reconnects at 1:50 — do not extend `SESSION_DURATION_MS` beyond 120_000
 - CameraX dependency is alpha (`1.5.0-alpha06`) — may receive breaking API changes on update
 - Frame rate is throttled in `SnapshotFrameAnalyzer.captureIntervalMs` — keep at 1000ms or higher
