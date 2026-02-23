@@ -6,6 +6,8 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,9 +27,12 @@ class AudioManager {
     var onAudioDataAvailable: ((ByteArray) -> Unit)? = null
     var isMuted: Boolean = false
     var onAudioLevelUpdate: ((Float) -> Unit)? = null
+    var gainFactor: Float = 3.0f
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+    private var agc: AutomaticGainControl? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
     private var recordJob: Job? = null
     private var scope: CoroutineScope? = null
 
@@ -54,6 +59,26 @@ class AudioManager {
             maxOf(minBuffer, RECORD_CHUNK_SIZE),
         )
 
+        audioRecord?.let { record ->
+            val sessionId = record.audioSessionId
+            if (AutomaticGainControl.isAvailable()) {
+                try {
+                    agc = AutomaticGainControl.create(sessionId)?.also { it.enabled = true }
+                    Log.d(TAG, "AGC enabled")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to enable AGC", e)
+                }
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                try {
+                    noiseSuppressor = NoiseSuppressor.create(sessionId)?.also { it.enabled = true }
+                    Log.d(TAG, "NoiseSuppressor enabled")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to enable NoiseSuppressor", e)
+                }
+            }
+        }
+
         audioRecord?.startRecording()
 
         recordJob = scope.launch(Dispatchers.IO) {
@@ -61,7 +86,7 @@ class AudioManager {
             while (isActive) {
                 val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: break
                 if (bytesRead > 0) {
-                    val data = buffer.copyOf(bytesRead)
+                    val data = amplifyAudio(buffer.copyOf(bytesRead))
                     // Calculate RMS audio level from PCM 16-bit samples
                     onAudioLevelUpdate?.let { callback ->
                         val level = calculateAudioLevel(data)
@@ -103,6 +128,20 @@ class AudioManager {
         audioTrack?.play()
     }
 
+    private fun amplifyAudio(data: ByteArray): ByteArray {
+        if (gainFactor == 1.0f) return data
+        val result = ByteArray(data.size)
+        for (i in 0 until data.size - 1 step 2) {
+            val sample = ((data[i + 1].toInt() shl 8) or (data[i].toInt() and 0xFF)).toShort()
+            val amplified = (sample * gainFactor).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                .toShort()
+            result[i] = (amplified.toInt() and 0xFF).toByte()
+            result[i + 1] = (amplified.toInt() shr 8).toByte()
+        }
+        return result
+    }
+
     private fun calculateAudioLevel(pcmData: ByteArray): Float {
         val sampleCount = pcmData.size / 2
         if (sampleCount == 0) return 0f
@@ -128,6 +167,11 @@ class AudioManager {
     fun shutdown() {
         recordJob?.cancel()
         recordJob = null
+
+        agc?.release()
+        agc = null
+        noiseSuppressor?.release()
+        noiseSuppressor = null
 
         try {
             audioRecord?.stop()

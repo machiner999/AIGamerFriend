@@ -39,4 +39,18 @@ class StatusOverlayKtTest {
         assertEquals(Color(0xFFFF1744), color)
         assertEquals("エラー", label)
     }
+
+    @Test
+    fun `Connected with delay returns orange and 応答待機中`() {
+        val (color, label) = statusOverlayInfo(SessionState.Connected, isDelayed = true)!!
+        assertEquals(Color(0xFFFF9100), color)
+        assertEquals("応答待機中", label)
+    }
+
+    @Test
+    fun `Connected without delay returns green and LIVE`() {
+        val (color, label) = statusOverlayInfo(SessionState.Connected, isDelayed = false)!!
+        assertEquals(Color(0xFF00E676), color)
+        assertEquals("LIVE", label)
+    }
 }

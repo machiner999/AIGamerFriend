@@ -29,8 +29,8 @@ import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.viewmodel.SessionState
 
 @VisibleForTesting
-internal fun statusOverlayInfo(state: SessionState): Pair<Color, String>? = when (state) {
-    is SessionState.Connected -> Color(0xFF00E676) to "LIVE"
+internal fun statusOverlayInfo(state: SessionState, isDelayed: Boolean = false): Pair<Color, String>? = when (state) {
+    is SessionState.Connected -> if (isDelayed) Color(0xFFFF9100) to "応答待機中" else Color(0xFF00E676) to "LIVE"
     is SessionState.Reconnecting -> Color(0xFFFFD600) to "再接続中"
     is SessionState.Error -> Color(0xFFFF1744) to "エラー"
     is SessionState.Connecting -> Color(0xFFFFD600) to "接続中"
@@ -40,21 +40,23 @@ internal fun statusOverlayInfo(state: SessionState): Pair<Color, String>? = when
 @Composable
 fun StatusOverlay(
     state: SessionState,
+    isDelayed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val (dotColor, label) = statusOverlayInfo(state) ?: return
+    val (dotColor, label) = statusOverlayInfo(state, isDelayed) ?: return
 
     val animatedColor by animateColorAsState(targetValue = dotColor, label = "dotColor")
 
     val pulseAlpha =
         if (state is SessionState.Connected) {
+            val pulseDuration = if (isDelayed) 500 else 1000
             val transition = rememberInfiniteTransition(label = "pulse")
             val alpha by transition.animateFloat(
                 initialValue = 1f,
                 targetValue = 0.4f,
                 animationSpec =
                     infiniteRepeatable(
-                        animation = tween(1000),
+                        animation = tween(pulseDuration),
                         repeatMode = RepeatMode.Reverse,
                     ),
                 label = "pulseAlpha",

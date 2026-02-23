@@ -67,6 +67,8 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         private const val CONNECT_TIMEOUT_MS = 15_000L // 15sec timeout for connect
         private const val FRAME_BUFFER_SIZE = 32_768 // 32KB — expected JPEG size after downscale
         private const val MAX_RECENT_FRAMES = 5
+        private const val RESPONSE_DELAY_THRESHOLD_MS = 5000L
+        private const val DELAY_CHECK_INTERVAL_MS = 1000L
     }
 
     private val _sessionState = MutableStateFlow<SessionState>(SessionState.Idle)
@@ -83,6 +85,9 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _gameName = MutableStateFlow<String?>(null)
     val gameName: StateFlow<String?> = _gameName.asStateFlow()
+
+    private val _isResponseDelayed = MutableStateFlow(false)
+    val isResponseDelayed: StateFlow<Boolean> = _isResponseDelayed.asStateFlow()
 
     private var audioManager: AudioManager? = null
     private var sessionHandle: SessionHandle? = null
@@ -362,8 +367,21 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+        // Monitor response delay
+        val delayMonitorJob = viewModelScope.launch {
+            while (true) {
+                delay(DELAY_CHECK_INTERVAL_MS)
+                val lastTime = liveClient.lastMessageTimeMs.value
+                _isResponseDelayed.value = _sessionState.value is SessionState.Connected &&
+                    lastTime > 0L &&
+                    System.currentTimeMillis() - lastTime >= RESPONSE_DELAY_THRESHOLD_MS
+            }
+        }
+
         return object : SessionHandle {
             override fun stopAudioConversation() {
+                delayMonitorJob.cancel()
+                _isResponseDelayed.value = false
                 monitorJob.cancel()
                 playbackJob.cancel()
                 audio.shutdown()
@@ -404,6 +422,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         _isMuted.value = false
         _audioLevel.value = 0f
         _gameName.value = null
+        _isResponseDelayed.value = false
         _sessionState.value = SessionState.Idle
     }
 
@@ -446,12 +465,8 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 null
             }
             val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession(memorySummary) }
-            sessionHandle = handle
-            _sessionState.value = SessionState.Connected
-            retryCount = 0
-            startSessionTimer()
-            Log.d(TAG, "Session connected" + if (memorySummary != null) " (with memory)" else "")
-            // Stop previous session after new one is ready (connect-before-disconnect)
+            // Stop previous session before setting Connected state to avoid race condition:
+            // old monitorJob detecting DISCONNECTED while _sessionState is already Connected
             if (previousHandle != null) {
                 try {
                     previousHandle.stopAudioConversation()
@@ -459,6 +474,11 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                     Log.w(TAG, "Error stopping previous session", e)
                 }
             }
+            sessionHandle = handle
+            _sessionState.value = SessionState.Connected
+            retryCount = 0
+            startSessionTimer()
+            Log.d(TAG, "Session connected" + if (memorySummary != null) " (with memory)" else "")
         } catch (e: CancellationException) {
             previousHandle?.safeStop()
             if (e is kotlinx.coroutines.TimeoutCancellationException) {

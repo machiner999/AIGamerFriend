@@ -44,6 +44,9 @@ class GeminiLiveClient(
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    private val _lastMessageTimeMs = MutableStateFlow(0L)
+    val lastMessageTimeMs: StateFlow<Long> = _lastMessageTimeMs.asStateFlow()
+
     val audioDataChannel = Channel<ByteArray>(Channel.UNLIMITED)
 
     var onFunctionCall: ((name: String, callId: String, args: Map<String, JsonElement>?) -> Unit)? = null
@@ -126,6 +129,8 @@ class GeminiLiveClient(
 
     private fun handleMessage(text: String) {
         try {
+            _lastMessageTimeMs.value = System.currentTimeMillis()
+
             // Log first 500 chars to see what server sends
             Log.d(TAG, "Server message: ${text.take(500)}")
 
@@ -176,7 +181,8 @@ class GeminiLiveClient(
             ),
         )
 
-        webSocket?.send(json.encodeToString(message))
+        val sent = webSocket?.send(json.encodeToString(message)) ?: false
+        Log.d(TAG, "Sent audio chunk: ${audioData.size} bytes, success=$sent")
     }
 
     fun sendVideoFrame(jpegBytes: ByteArray) {
@@ -194,7 +200,8 @@ class GeminiLiveClient(
             ),
         )
 
-        webSocket?.send(json.encodeToString(message))
+        val sent = webSocket?.send(json.encodeToString(message)) ?: false
+        Log.d(TAG, "Sent video frame: ${jpegBytes.size} bytes, success=$sent")
     }
 
     fun sendToolResponse(callId: String, name: String, result: Map<String, JsonElement>) {
@@ -210,7 +217,9 @@ class GeminiLiveClient(
             ),
         )
 
-        webSocket?.send(json.encodeToString(message))
+        val jsonStr = json.encodeToString(message)
+        val sent = webSocket?.send(jsonStr) ?: false
+        Log.d(TAG, "Sent tool response: callId=$callId, name=$name, success=$sent")
     }
 
     fun disconnect() {

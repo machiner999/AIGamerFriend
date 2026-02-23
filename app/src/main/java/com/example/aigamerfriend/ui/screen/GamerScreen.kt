@@ -129,6 +129,7 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val isMuted by viewModel.isMuted.collectAsStateWithLifecycle()
     val audioLevel by viewModel.audioLevel.collectAsStateWithLifecycle()
     val gameName by viewModel.gameName.collectAsStateWithLifecycle()
+    val isResponseDelayed by viewModel.isResponseDelayed.collectAsStateWithLifecycle()
     val showOnboarding by viewModel.showOnboarding.collectAsStateWithLifecycle()
     val voiceName by viewModel.voiceName.collectAsStateWithLifecycle()
     val reactionIntensity by viewModel.reactionIntensity.collectAsStateWithLifecycle()
@@ -202,6 +203,7 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
             ) {
                 StatusOverlay(
                     state = sessionState,
+                    isDelayed = isResponseDelayed,
                 )
 
                 // Game name label

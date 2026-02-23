@@ -36,7 +36,7 @@ Gemini Live APIに接続するには、`local.properties` に `GEMINI_API_KEY=yo
 
 **データフロー**: `CameraPreview` が1FPSでフレームをキャプチャし、短辺512pxにダウンスケール → `GamerViewModel.sendVideoFrame()` がJPEG（quality 60）に圧縮 → `GeminiLiveClient.sendVideoFrame()` がBase64エンコードして `realtimeInput.mediaChunks` でWebSocket送信 → Geminiが音声で応答（`serverContent.modelTurn.parts[].inlineData`）→ `AudioManager` がPCMデータをスピーカーで再生。マイク入力は `AudioManager` が16kHz PCMでキャプチャし `GeminiLiveClient.sendAudioChunk()` で送信。Function Call（感情変更、Google検索、ゲーム名検出）は `toolCall` メッセージで受信し、`GamerViewModel.handleFunctionCall()` で処理後 `toolResponse` を返送。
 
-**セッションライフサイクル** (`GamerViewModel`): Gemini Live APIには2分のハードリミットがある。`GamerViewModel` がタイマーを動かし、1:50で能動的に再接続する（`SESSION_DURATION_MS = 110_000L`）。再接続時、バッファされた映像フレームからセッション要約を生成して `MemoryStore` に保存し、過去のセッション要約付きでシステムプロンプトを再送信して、AIが以前の会話を参照できるようにする。ネットワークエラー時は線形バックオフで最大3回リトライ（`RETRY_BASE_DELAY_MS * retryCount`、2秒から開始）。
+**セッションライフサイクル** (`GamerViewModel`): Gemini Live APIには2分のハードリミットがある。`GamerViewModel` がタイマーを動かし、1:50で能動的に再接続する（`SESSION_DURATION_MS = 110_000L`）。再接続はConnect-Before-Disconnectパターン: 新セッション接続完了後、`SessionState.Connected` を設定する**前に**旧セッションを切断する（`reconnect()` → `connectSession(previousHandle)` → `openSession()` 成功 → `previousHandle.stopAudioConversation()` → `_sessionState = Connected`）。この順序は旧WebSocketの切断コールバックが新セッションのエラーハンドリングを誤発火させる競合状態を防ぐために重要。再接続時、バッファされた映像フレームからセッション要約を生成して `MemoryStore` に保存し、過去のセッション要約付きでシステムプロンプトを再送信して、AIが以前の会話を参照できるようにする。ネットワークエラー時は線形バックオフで最大3回リトライ（`RETRY_BASE_DELAY_MS * retryCount`、2秒から開始）。
 
 **記憶システム** (`MemoryStore` + `GamerViewModel`): 再接続ごとに、直近5フレームのバッファされた映像をnon-liveの `GenerativeModel`（`gemini-2.5-flash`）に送信し、1〜2文の日本語要約を生成する。要約はDataStore PreferencesにJSON配列として保存（最大10件、各200文字で切り詰め）。セッション接続時、保存済み要約をシステムプロンプトの `## これまでの記憶` セクションに追加する。記憶関連の操作はすべて非致命的 — 失敗時はログに記録して静かにスキップする。`MemoryStore` は `@VisibleForTesting internal var memoryStore` で注入可能、要約生成は `@VisibleForTesting internal var summarizer` ラムダで注入可能。
 
@@ -50,8 +50,8 @@ Gemini Live APIに接続するには、`local.properties` に `GEMINI_API_KEY=yo
 
 **WebSocket通信層**（`data/` パッケージ）: Firebase AI Logic SDKの `parameters_json_schema` シリアライズ問題を回避するため、Live APIセッションはOkHttp WebSocketで直接接続する。3つのクラスで構成:
 - `GeminiLiveModels.kt` — `@Serializable` データクラス群（`GeminiSetupMessage`、`GeminiRealtimeInputMessage`、`GeminiServerMessage`、`GeminiToolResponseMessage`）。セットアップ、音声/映像送信、サーバー応答、ツール応答のJSON構造を定義。
-- `GeminiLiveClient.kt` — OkHttp WebSocketクライアント。`wss://generativelanguage.googleapis.com/ws/...v1alpha...BidiGenerateContent?key=` に接続。`connect()`/`disconnect()`/`sendVideoFrame()`/`sendAudioChunk()`/`sendToolResponse()` を公開。`onFunctionCall` コールバックでFunction Callを通知。`audioDataChannel: Channel<ByteArray>` で受信音声を流す。
-- `AudioManager.kt` — マイク録音（16kHz mono PCM 16bit、チャンク2048B、`Dispatchers.IO`）とスピーカー再生（24kHz mono PCM 16bit、バッファ4倍）。`isMuted` フラグでマイク送信を抑制（録音自体は継続）。`onAudioLevelUpdate` コールバックでRMS音声レベル（0.0-1.0）を通知。
+- `GeminiLiveClient.kt` — OkHttp WebSocketクライアント。`wss://generativelanguage.googleapis.com/ws/...v1alpha...BidiGenerateContent?key=` に接続。`connect()`/`disconnect()`/`sendVideoFrame()`/`sendAudioChunk()`/`sendToolResponse()` を公開。`onFunctionCall` コールバックでFunction Callを通知。`audioDataChannel: Channel<ByteArray>` で受信音声を流す。JSONシリアライズは `encodeDefaults = false` — `@Serializable` データクラスにデフォルト値を付けるとJSONに出力されないため、API必須フィールドにはデフォルト値を使わないこと。
+- `AudioManager.kt` — マイク録音（16kHz mono PCM 16bit、チャンク2048B、`Dispatchers.IO`）とスピーカー再生（24kHz mono PCM 16bit、バッファ4倍）。`isMuted` フラグでマイク送信を抑制（録音自体は継続）。`onAudioLevelUpdate` コールバックでRMS音声レベル（0.0-1.0）を通知。`gainFactor`（デフォルト3.0f）でPCM 16bitサンプルをソフトウェア増幅し、クリッピング対応済み。増幅はAGC/NoiseSuppressorの後段で適用される。
 - `SettingsStore.kt` — DataStore Preferencesによるアプリ設定永続化（オンボーディングフラグ、声の種類、リアクション強度）。
 
 `GamerViewModel.openSession()` がこれらを組み立て、`SessionHandle` インターフェース（`stopAudioConversation()` + `sendVideoFrame(ByteArray)`）で抽象化して返す。テストでは `viewModel.sessionConnector` ラムダに偽の `SessionHandle` を注入することで、WebSocket/AudioManagerを一切使わずにセッションライフサイクルをテストできる。
@@ -92,6 +92,7 @@ GitHub Actions（`.github/workflows/ci.yml`）が `main` へのpush/PRで実行:
 
 ## 規約
 
+- Claude Codeの応答は常に日本語で行うこと
 - UI文字列は日本語でハードコード（現時点ではstring resourcesなし）
 - ComposeではStateFlowを `collectAsStateWithLifecycle` で収集
 - JVMツールチェーン 17
