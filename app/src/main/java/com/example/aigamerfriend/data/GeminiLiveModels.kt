@@ -76,7 +76,7 @@ data class GeminiSetupMessage(
 
     @Serializable
     data class FunctionParameters(
-        val type: String = "OBJECT",
+        val type: String,
         val properties: Map<String, PropertySchema>? = null,
         val required: List<String>? = null,
     )
