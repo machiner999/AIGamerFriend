@@ -12,7 +12,9 @@ import com.example.aigamerfriend.data.ConnectionState
 import com.example.aigamerfriend.data.GeminiLiveClient
 import com.example.aigamerfriend.data.GeminiSetupMessage
 import com.example.aigamerfriend.data.MemoryStore
+import com.example.aigamerfriend.data.SettingsStore
 import com.example.aigamerfriend.memoryDataStore
+import com.example.aigamerfriend.settingsDataStore
 import com.example.aigamerfriend.model.Emotion
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
@@ -73,6 +75,16 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentEmotion = MutableStateFlow(Emotion.NEUTRAL)
     val currentEmotion: StateFlow<Emotion> = _currentEmotion.asStateFlow()
 
+    private val _isMuted = MutableStateFlow(false)
+    val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
+
+    private val _audioLevel = MutableStateFlow(0f)
+    val audioLevel: StateFlow<Float> = _audioLevel.asStateFlow()
+
+    private val _gameName = MutableStateFlow<String?>(null)
+    val gameName: StateFlow<String?> = _gameName.asStateFlow()
+
+    private var audioManager: AudioManager? = null
     private var sessionHandle: SessionHandle? = null
     private var sessionTimerJob: Job? = null
     private var retryCount = 0
@@ -83,14 +95,87 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     internal var memoryStore: MemoryStore = MemoryStore(application.memoryDataStore)
 
     @VisibleForTesting
+    internal var settingsStore: SettingsStore = SettingsStore(application.settingsDataStore)
+        set(value) {
+            settingsLoadJob?.cancel()
+            field = value
+            loadSettings()
+        }
+
+    @VisibleForTesting
     internal var summarizer: (suspend (List<ByteArray>) -> String?)? = null
+
+    private val _showOnboarding = MutableStateFlow(false)
+    val showOnboarding: StateFlow<Boolean> = _showOnboarding.asStateFlow()
+
+    private val _voiceName = MutableStateFlow("AOEDE")
+    val voiceName: StateFlow<String> = _voiceName.asStateFlow()
+
+    private val _reactionIntensity = MutableStateFlow("ふつう")
+    val reactionIntensity: StateFlow<String> = _reactionIntensity.asStateFlow()
+
+    private var settingsLoadJob: Job? = null
+
+    init {
+        loadSettings()
+    }
+
+    private fun loadSettings() {
+        val store = settingsStore
+        settingsLoadJob = viewModelScope.launch {
+            launch {
+                try {
+                    _showOnboarding.value = !store.isOnboardingShown()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to check onboarding status", e)
+                }
+            }
+            launch {
+                try {
+                    store.voiceNameFlow().collect { _voiceName.value = it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read voice name", e)
+                }
+            }
+            launch {
+                try {
+                    store.reactionIntensityFlow().collect { _reactionIntensity.value = it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read reaction intensity", e)
+                }
+            }
+        }
+    }
+
+    fun setVoiceName(name: String) {
+        viewModelScope.launch { settingsStore.setVoiceName(name) }
+    }
+
+    fun setReactionIntensity(intensity: String) {
+        viewModelScope.launch { settingsStore.setReactionIntensity(intensity) }
+    }
+
+    fun clearMemory() {
+        viewModelScope.launch { memoryStore.clear() }
+    }
+
+    fun dismissOnboarding() {
+        _showOnboarding.value = false
+        viewModelScope.launch {
+            try {
+                settingsStore.setOnboardingShown()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to save onboarding status", e)
+            }
+        }
+    }
 
     private val summaryModel by lazy {
         Firebase.ai(backend = GenerativeBackend.googleAI())
             .generativeModel(SUMMARY_MODEL_NAME)
     }
 
-    private val emotionToolDeclarations = Emotion.entries.map { emotion ->
+    private val toolDeclarations = Emotion.entries.map { emotion ->
         GeminiSetupMessage.FunctionDeclaration(
             name = "setEmotion_${emotion.name}",
             description = when (emotion) {
@@ -104,10 +189,23 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             },
             parameters = null,
         )
-    }
+    } + GeminiSetupMessage.FunctionDeclaration(
+        name = "setGameName",
+        description = "プレイしているゲームのタイトル名を設定する",
+        parameters = GeminiSetupMessage.FunctionParameters(
+            type = "OBJECT",
+            properties = mapOf(
+                "name" to GeminiSetupMessage.PropertySchema(
+                    type = "STRING",
+                    description = "ゲームのタイトル名",
+                ),
+            ),
+            required = listOf("name"),
+        ),
+    )
 
     private val liveTools = listOf(
-        GeminiSetupMessage.Tool(functionDeclarations = emotionToolDeclarations),
+        GeminiSetupMessage.Tool(functionDeclarations = toolDeclarations),
         GeminiSetupMessage.Tool(googleSearch = GeminiSetupMessage.GoogleSearch()),
     )
 
@@ -141,28 +239,67 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         ## 表情
         発言の感情に合わせて対応するsetEmotion_xxx関数を呼び出せ。感情が変わるたびに更新しろ。
         setEmotion_HAPPY:褒める・楽しい / setEmotion_EXCITED:すごいプレイ・勝利 / setEmotion_SURPRISED:予想外の展開 / setEmotion_THINKING:考え中・悩み中 / setEmotion_WORRIED:ピンチ・危険 / setEmotion_SAD:ゲームオーバー・残念 / setEmotion_NEUTRAL:落ち着いている
+
+        ## ゲーム認識
+        プレイしているゲームが分かったら setGameName 関数でゲーム名を設定しろ。ゲームが変わったら再度呼び出せ。
         """.trimIndent()
 
     private fun buildSystemPrompt(memorySummary: String?): String {
-        if (memorySummary == null) return baseSystemPrompt
-        return baseSystemPrompt + "\n\n## これまでの記憶\n" +
-            "以下は過去のセッションの要約。同じリアクションを繰り返さず、自然に言及しろ。\n" +
-            memorySummary
+        val parts = mutableListOf(baseSystemPrompt)
+
+        when (reactionIntensity.value) {
+            "おとなしめ" -> parts.add("\n\n## リアクションの強さ\nリアクションは控えめにしろ。静かに見守る感じで。")
+            "テンション高め" -> parts.add("\n\n## リアクションの強さ\nテンション高めで！大げさにリアクションしろ！")
+        }
+
+        if (memorySummary != null) {
+            parts.add(
+                "\n\n## これまでの記憶\n" +
+                    "以下は過去のセッションの要約。同じリアクションを繰り返さず、自然に言及しろ。\n" +
+                    memorySummary,
+            )
+        }
+
+        return parts.joinToString("")
     }
 
     @VisibleForTesting
     internal var sessionConnector: (suspend () -> SessionHandle)? = null
 
     @VisibleForTesting
-    internal fun handleFunctionCall(name: String, callId: String): String {
+    internal fun handleFunctionCall(
+        name: String,
+        callId: String,
+        args: Map<String, JsonElement>? = null,
+    ): String {
         val prefix = "setEmotion_"
-        return if (name.startsWith(prefix)) {
-            val emotionStr = name.removePrefix(prefix)
-            _currentEmotion.value = Emotion.fromString(emotionStr)
-            """{"success": true}"""
-        } else {
-            """{"error": "Unknown function: $name"}"""
+        return when {
+            name.startsWith(prefix) -> {
+                val emotionStr = name.removePrefix(prefix)
+                _currentEmotion.value = Emotion.fromString(emotionStr)
+                """{"success": true}"""
+            }
+            name == "setGameName" -> {
+                val gameName = args?.get("name")?.let { element ->
+                    (element as? JsonPrimitive)?.content
+                }
+                if (gameName != null) {
+                    _gameName.value = gameName
+                    """{"success": true}"""
+                } else {
+                    """{"error": "Missing name argument"}"""
+                }
+            }
+            else -> {
+                """{"error": "Unknown function: $name"}"""
+            }
         }
+    }
+
+    fun toggleMute() {
+        val newValue = !_isMuted.value
+        _isMuted.value = newValue
+        audioManager?.isMuted = newValue
     }
 
     private suspend fun openSession(memorySummary: String?): SessionHandle {
@@ -175,20 +312,22 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             modelName = MODEL_NAME,
             systemInstruction = systemPrompt,
             tools = liveTools,
+            voiceName = voiceName.value,
         )
 
-        val audioManager = AudioManager()
+        val audio = AudioManager()
+        audio.isMuted = _isMuted.value
+        audio.onAudioLevelUpdate = { level -> _audioLevel.value = level }
+        this.audioManager = audio
 
         // Set up function call handler
-        liveClient.onFunctionCall = { name, callId, _ ->
-            val result = handleFunctionCall(name, callId)
-            val resultMap = mapOf<String, JsonElement>(
-                if (name.startsWith("setEmotion_")) {
-                    "success" to JsonPrimitive(true)
-                } else {
-                    "error" to JsonPrimitive("Unknown function: $name")
-                },
-            )
+        liveClient.onFunctionCall = { name, callId, args ->
+            val result = handleFunctionCall(name, callId, args)
+            val resultMap = if (result.contains("success")) {
+                mapOf<String, JsonElement>("success" to JsonPrimitive(true))
+            } else {
+                mapOf<String, JsonElement>("error" to JsonPrimitive("Unknown function: $name"))
+            }
             liveClient.sendToolResponse(callId, name, resultMap)
         }
 
@@ -199,15 +338,15 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // Start audio I/O
-        audioManager.onAudioDataAvailable = { audioData ->
+        audio.onAudioDataAvailable = { audioData ->
             liveClient.sendAudioChunk(audioData)
         }
-        audioManager.start(viewModelScope)
+        audio.start(viewModelScope)
 
         // Start audio playback loop
         val playbackJob = viewModelScope.launch(Dispatchers.IO) {
             for (audioBytes in liveClient.audioDataChannel) {
-                audioManager.playAudio(audioBytes)
+                audio.playAudio(audioBytes)
             }
         }
 
@@ -227,7 +366,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             override fun stopAudioConversation() {
                 monitorJob.cancel()
                 playbackJob.cancel()
-                audioManager.shutdown()
+                audio.shutdown()
                 liveClient.disconnect()
             }
 
@@ -258,9 +397,13 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             Log.w(TAG, "Error stopping audio conversation", e)
         }
         sessionHandle = null
+        audioManager = null
         retryCount = 0
         recentFrames.clear()
         _currentEmotion.value = Emotion.NEUTRAL
+        _isMuted.value = false
+        _audioLevel.value = 0f
+        _gameName.value = null
         _sessionState.value = SessionState.Idle
     }
 
@@ -291,8 +434,10 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun connectSession() {
-        _sessionState.value = SessionState.Connecting
+    private suspend fun connectSession(previousHandle: SessionHandle? = null) {
+        if (previousHandle == null) {
+            _sessionState.value = SessionState.Connecting
+        }
         try {
             val memorySummary = try {
                 memoryStore.getFormattedSummaries()
@@ -306,7 +451,16 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             retryCount = 0
             startSessionTimer()
             Log.d(TAG, "Session connected" + if (memorySummary != null) " (with memory)" else "")
+            // Stop previous session after new one is ready (connect-before-disconnect)
+            if (previousHandle != null) {
+                try {
+                    previousHandle.stopAudioConversation()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping previous session", e)
+                }
+            }
         } catch (e: CancellationException) {
+            previousHandle?.safeStop()
             if (e is kotlinx.coroutines.TimeoutCancellationException) {
                 Log.e(TAG, "Session connect timed out after ${CONNECT_TIMEOUT_MS}ms")
                 handleConnectionError(RuntimeException("接続タイムアウト", e))
@@ -314,8 +468,17 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 throw e
             }
         } catch (e: Exception) {
+            previousHandle?.safeStop()
             Log.e(TAG, "Failed to connect session", e)
             handleConnectionError(e)
+        }
+    }
+
+    private fun SessionHandle.safeStop() {
+        try {
+            stopAudioConversation()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error stopping previous session", e)
         }
     }
 
@@ -335,21 +498,9 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         val previousHandle = sessionHandle
         sessionHandle = null
         _sessionState.value = SessionState.Reconnecting
-        try {
-            previousHandle?.stopAudioConversation()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error stopping previous session", e)
-        }
 
         viewModelScope.launch {
-            try {
-                connectSession()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to reconnect", e)
-                handleConnectionError(e)
-            }
+            connectSession(previousHandle)
         }
     }
 

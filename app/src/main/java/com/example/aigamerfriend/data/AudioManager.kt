@@ -23,6 +23,8 @@ class AudioManager {
     }
 
     var onAudioDataAvailable: ((ByteArray) -> Unit)? = null
+    var isMuted: Boolean = false
+    var onAudioLevelUpdate: ((Float) -> Unit)? = null
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
@@ -59,7 +61,15 @@ class AudioManager {
             while (isActive) {
                 val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: break
                 if (bytesRead > 0) {
-                    onAudioDataAvailable?.invoke(buffer.copyOf(bytesRead))
+                    val data = buffer.copyOf(bytesRead)
+                    // Calculate RMS audio level from PCM 16-bit samples
+                    onAudioLevelUpdate?.let { callback ->
+                        val level = calculateAudioLevel(data)
+                        callback(level)
+                    }
+                    if (!isMuted) {
+                        onAudioDataAvailable?.invoke(data)
+                    }
                 }
             }
         }
@@ -91,6 +101,20 @@ class AudioManager {
             .build()
 
         audioTrack?.play()
+    }
+
+    private fun calculateAudioLevel(pcmData: ByteArray): Float {
+        val sampleCount = pcmData.size / 2
+        if (sampleCount == 0) return 0f
+        var sumSquares = 0.0
+        for (i in 0 until sampleCount) {
+            val low = pcmData[i * 2].toInt() and 0xFF
+            val high = pcmData[i * 2 + 1].toInt()
+            val sample = (high shl 8) or low
+            sumSquares += sample.toDouble() * sample.toDouble()
+        }
+        val rms = kotlin.math.sqrt(sumSquares / sampleCount)
+        return (rms / Short.MAX_VALUE).toFloat().coerceIn(0f, 1f)
     }
 
     fun playAudio(data: ByteArray) {
