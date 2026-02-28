@@ -10,52 +10,39 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,30 +50,36 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.aigamerfriend.BuildConfig
-import com.example.aigamerfriend.ui.component.AIFace
-import com.example.aigamerfriend.ui.component.CameraPreview
-import com.example.aigamerfriend.ui.component.StatusOverlay
-import com.example.aigamerfriend.util.PermissionHelper
 import androidx.activity.ComponentActivity
 import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.model.Emotion
+import com.example.aigamerfriend.ui.component.AIFace
+import com.example.aigamerfriend.ui.component.CameraPreview
+import com.example.aigamerfriend.ui.component.GlassControlPanel
+import com.example.aigamerfriend.ui.component.OnboardingOverlay
+import com.example.aigamerfriend.ui.component.SettingsBottomSheet
+import com.example.aigamerfriend.ui.component.StatusOverlay
+import com.example.aigamerfriend.ui.component.glassPanel
+import com.example.aigamerfriend.ui.theme.NeonBlue
+import com.example.aigamerfriend.ui.theme.NeonGreen
+import com.example.aigamerfriend.ui.theme.StatusWarning
+import com.example.aigamerfriend.ui.theme.accentColor
+import com.example.aigamerfriend.util.PermissionHelper
 import com.example.aigamerfriend.viewmodel.GamerViewModel
 import com.example.aigamerfriend.viewmodel.SessionState
-
-private val NeonGreen = Color(0xFF00E676)
-private val NeonBlue = Color(0xFF00D4FF)
 
 @VisibleForTesting
 internal fun isSessionActive(state: SessionState): Boolean =
@@ -122,7 +115,6 @@ private fun View.performHaptic(type: HapticType) {
     performHapticFeedback(constant)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val context = LocalContext.current
@@ -191,10 +183,9 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     }
 
     Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
     ) {
         if (hasPermissions) {
             // Full-screen camera preview
@@ -205,54 +196,86 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
 
             // Status overlay (top-left, respects safe area)
             Column(
-                modifier =
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .padding(16.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(16.dp),
             ) {
                 StatusOverlay(
                     state = sessionState,
                     isDelayed = isResponseDelayed,
                 )
 
-                // Game name label
+                // Game name label with slide-in + gradient background
                 AnimatedVisibility(
                     visible = gameName != null,
-                    enter = fadeIn(),
+                    enter = fadeIn() + slideInHorizontally { -it },
                     exit = fadeOut(),
                 ) {
-                    Text(
-                        text = gameName ?: "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = NeonBlue,
+                    Row(
                         modifier = Modifier
                             .padding(top = 8.dp)
-                            .background(
-                                color = Color.Black.copy(alpha = 0.7f),
+                            .glassPanel(
                                 shape = RoundedCornerShape(16.dp),
+                                bgAlpha = 0.6f,
+                                borderAlpha = 0.1f,
                             )
-                            .border(
-                                width = 1.dp,
-                                color = Color.White.copy(alpha = 0.08f),
+                            .background(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(
+                                        NeonBlue.copy(alpha = 0.15f),
+                                        Color.Transparent,
+                                    ),
+                                ),
                                 shape = RoundedCornerShape(16.dp),
                             )
                             .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SportsEsports,
+                            contentDescription = null,
+                            tint = NeonBlue,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = gameName ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = NeonBlue,
+                        )
+                    }
                 }
             }
 
-            // AI Face (above the control panel)
+            // Connecting pulse ring (shown at AIFace position while connecting)
             AnimatedVisibility(
-                visible = sessionState is SessionState.Connected,
+                visible = sessionState is SessionState.Connecting,
                 enter = fadeIn(),
                 exit = fadeOut(),
-                modifier =
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 120.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 120.dp),
             ) {
-                AIFace(emotion = currentEmotion)
+                ConnectingPulseRing()
+            }
+
+            // AI Face (above the control panel) with enhanced entrance
+            AnimatedVisibility(
+                visible = sessionState is SessionState.Connected,
+                enter = fadeIn() + scaleIn(
+                    initialScale = 0.3f,
+                    animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
+                ),
+                exit = fadeOut() + scaleOut(targetScale = 0.5f),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 120.dp),
+            ) {
+                AIFace(
+                    emotion = currentEmotion,
+                    audioLevel = audioLevel,
+                )
             }
 
             // Glass control panel at bottom
@@ -261,6 +284,7 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
                 isMuted = isMuted,
                 onToggleMute = { viewModel.toggleMute() },
                 audioLevel = audioLevel,
+                currentEmotion = currentEmotion,
                 onStart = { viewModel.startSession() },
                 onStop = { viewModel.stopSession() },
                 onOpenSettings = { showSettings = true },
@@ -278,10 +302,9 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
         } else {
             // Permission request view
             Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -344,385 +367,37 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
 }
 
 @Composable
-private fun OnboardingOverlay(onDismiss: () -> Unit) {
+private fun ConnectingPulseRing() {
+    val transition = rememberInfiniteTransition(label = "connectPulse")
+    val pulseScale by transition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "connectPulseScale",
+    )
+    val pulseAlpha by transition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "connectPulseAlpha",
+    )
+
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-            ) { onDismiss() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(32.dp)
-                .background(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(24.dp),
+            .size(180.dp)
+            .drawBehind {
+                val radius = size.minDimension / 2f * pulseScale
+                drawCircle(
+                    color = StatusWarning.copy(alpha = pulseAlpha),
+                    radius = radius,
+                    style = Stroke(width = 2.dp.toPx()),
                 )
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(24.dp),
-                )
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "ゲーム画面にカメラを向けよう",
-                style = MaterialTheme.typography.titleLarge,
-                color = NeonGreen,
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "TVやモニターのゲーム画面を背面カメラで撮影すると、AIの友達「ユウ」が音声でリアクションするよ！",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.9f),
-                textAlign = TextAlign.Center,
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "タップして閉じる",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AudioLevelIndicator(level: Float, modifier: Modifier = Modifier) {
-    val barHeights = listOf(0.3f, 0.6f, 0.8f, 1.0f)
-    val maxHeight = 20.dp
-    val minHeight = 6.dp
-
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        barHeights.forEach { threshold ->
-            val targetHeight = if (level >= threshold) {
-                minHeight + (maxHeight - minHeight) * (level / 1.0f).coerceAtMost(1f)
-            } else {
-                minHeight
-            }
-            val animatedHeight by animateFloatAsState(
-                targetValue = targetHeight.value,
-                label = "barHeight",
-            )
-            val isActive = level >= threshold * 0.5f
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height(animatedHeight.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(if (isActive) NeonGreen else Color.White.copy(alpha = 0.2f)),
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusText(state: SessionState, modifier: Modifier = Modifier) {
-    val (text, color) =
-        when (state) {
-            is SessionState.Idle -> "タップしてゲーム友達を呼ぼう" to Color.White.copy(alpha = 0.7f)
-            is SessionState.Connecting -> "接続中..." to Color(0xFFFFD600)
-            is SessionState.Connected -> "ゲーム友達が見てるよ！" to NeonGreen
-            is SessionState.Reconnecting -> "再接続中..." to Color(0xFFFFD600)
-            is SessionState.Error -> state.message to Color(0xFFFF1744)
-        }
-
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = color,
-        textAlign = TextAlign.Start,
-        modifier = modifier,
+            },
     )
-}
-
-@Composable
-private fun GlassControlPanel(
-    state: SessionState,
-    isMuted: Boolean,
-    onToggleMute: () -> Unit,
-    audioLevel: Float,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val isActive = isSessionActive(state)
-
-    Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .background(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                )
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                )
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        StatusText(
-            state = state,
-            modifier = Modifier.weight(1f),
-        )
-
-        if (isActive) {
-            AudioLevelIndicator(
-                level = audioLevel,
-                modifier = Modifier.padding(end = 8.dp),
-            )
-
-            IconButton(
-                onClick = onToggleMute,
-                modifier = Modifier.size(40.dp),
-            ) {
-                Icon(
-                    imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                    contentDescription = if (isMuted) "ミュート解除" else "ミュート",
-                    tint = if (isMuted) Color(0xFFFF1744) else Color.White,
-                )
-            }
-        }
-
-        SessionButton(
-            state = state,
-            onStart = onStart,
-            onStop = onStop,
-        )
-
-        IconButton(
-            onClick = onOpenSettings,
-            modifier = Modifier
-                .padding(start = 8.dp)
-                .size(40.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "設定",
-                tint = Color.White.copy(alpha = 0.7f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SessionButton(
-    state: SessionState,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-) {
-    val isActive = isSessionActive(state)
-
-    Button(
-        onClick = if (isActive) onStop else onStart,
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = if (isActive) Color(0xFFFF1744) else MaterialTheme.colorScheme.primary,
-            ),
-    ) {
-        Text(
-            text = if (isActive) "終了" else "開始",
-            style = MaterialTheme.typography.titleLarge,
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-private fun SettingsBottomSheet(
-    voiceName: String,
-    onVoiceNameChange: (String) -> Unit,
-    reactionIntensity: String,
-    onReactionIntensityChange: (String) -> Unit,
-    autoStart: Boolean,
-    onAutoStartChange: (Boolean) -> Unit,
-    onClearMemory: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showClearConfirm by remember { mutableStateOf(false) }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF121212),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-        ) {
-            Text(
-                text = "設定",
-                style = MaterialTheme.typography.titleLarge,
-                color = NeonGreen,
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Voice selection
-            Text(
-                text = "声の種類",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            val voices = listOf("AOEDE", "KORE", "PUCK", "CHARON", "FENRIR")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                voices.forEach { voice ->
-                    FilterChip(
-                        selected = voiceName == voice,
-                        onClick = { onVoiceNameChange(voice) },
-                        label = { Text(voice) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = NeonGreen.copy(alpha = 0.2f),
-                            selectedLabelColor = NeonGreen,
-                            labelColor = Color.White.copy(alpha = 0.7f),
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = Color.White.copy(alpha = 0.2f),
-                            selectedBorderColor = NeonGreen,
-                            enabled = true,
-                            selected = voiceName == voice,
-                        ),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Reaction intensity
-            Text(
-                text = "リアクションの強さ",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            val intensities = listOf("おとなしめ", "ふつう", "テンション高め")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                intensities.forEach { intensity ->
-                    FilterChip(
-                        selected = reactionIntensity == intensity,
-                        onClick = { onReactionIntensityChange(intensity) },
-                        label = { Text(intensity) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = NeonGreen.copy(alpha = 0.2f),
-                            selectedLabelColor = NeonGreen,
-                            labelColor = Color.White.copy(alpha = 0.7f),
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = Color.White.copy(alpha = 0.2f),
-                            selectedBorderColor = NeonGreen,
-                            enabled = true,
-                            selected = reactionIntensity == intensity,
-                        ),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Auto-start
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "自動スタート",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White,
-                    )
-                    Text(
-                        text = "アプリ起動時に自動でセッションを開始",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.5f),
-                    )
-                }
-                Switch(
-                    checked = autoStart,
-                    onCheckedChange = onAutoStartChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = NeonGreen,
-                    ),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Clear memory
-            OutlinedButton(
-                onClick = { showClearConfirm = true },
-                border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(Color(0xFFFF1744)),
-                ),
-            ) {
-                Text(
-                    text = "記憶をクリア",
-                    color = Color(0xFFFF1744),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Version
-            Text(
-                text = "v${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
-            )
-        }
-    }
-
-    if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text("記憶をクリア") },
-            text = { Text("過去のセッションの記憶をすべて削除しますか？") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onClearMemory()
-                        showClearConfirm = false
-                    },
-                ) {
-                    Text("クリア", color = Color(0xFFFF1744))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) {
-                    Text("キャンセル")
-                }
-            },
-        )
-    }
 }

@@ -9,7 +9,7 @@ private val DarkColorScheme =
     darkColorScheme(
         primary = NeonGreen,
         secondary = NeonBlue,
-        tertiary = Purple80,
+        tertiary = EmotionPurple,
         background = DarkBackground,
         surface = DarkSurface,
         onPrimary = DarkBackground,

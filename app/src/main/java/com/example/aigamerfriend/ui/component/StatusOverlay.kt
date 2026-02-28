@@ -1,13 +1,12 @@
 package com.example.aigamerfriend.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -18,22 +17,31 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.annotation.VisibleForTesting
+import com.example.aigamerfriend.ui.theme.StatusDelayed
+import com.example.aigamerfriend.ui.theme.StatusError
+import com.example.aigamerfriend.ui.theme.StatusLive
+import com.example.aigamerfriend.ui.theme.StatusWarning
 import com.example.aigamerfriend.viewmodel.SessionState
 
 @VisibleForTesting
 internal fun statusOverlayInfo(state: SessionState, isDelayed: Boolean = false): Pair<Color, String>? = when (state) {
-    is SessionState.Connected -> if (isDelayed) Color(0xFFFF9100) to "応答待機中" else Color(0xFF00E676) to "LIVE"
-    is SessionState.Reconnecting -> Color(0xFFFFD600) to "再接続中"
-    is SessionState.Error -> Color(0xFFFF1744) to "エラー"
-    is SessionState.Connecting -> Color(0xFFFFD600) to "接続中"
+    is SessionState.Connected -> if (isDelayed) StatusDelayed to "応答待機中" else StatusLive to "LIVE"
+    is SessionState.Reconnecting -> StatusWarning to "再接続中"
+    is SessionState.Error -> StatusError to "エラー"
+    is SessionState.Connecting -> StatusWarning to "接続中"
     is SessionState.Idle -> null
 }
 
@@ -66,29 +74,42 @@ fun StatusOverlay(
             1f
         }
 
+    // Shake animation for error state
+    val shakeOffset = remember { Animatable(0f) }
+    LaunchedEffect(state) {
+        if (state is SessionState.Error) {
+            repeat(3) {
+                shakeOffset.animateTo(6f, tween(40))
+                shakeOffset.animateTo(-6f, tween(40))
+            }
+            shakeOffset.animateTo(0f, tween(40))
+        }
+    }
+
     Row(
-        modifier =
-            modifier
-                .background(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(16.dp),
-                )
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(16.dp),
-                )
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = modifier
+            .shadow(8.dp, RoundedCornerShape(16.dp))
+            .glassPanel(shape = RoundedCornerShape(16.dp), bgAlpha = 0.7f, borderAlpha = 0.1f)
+            .graphicsLayer { translationX = shakeOffset.value }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        // Dot with glow
         Box(
-            modifier =
-                Modifier
-                    .size(10.dp)
-                    .alpha(pulseAlpha)
-                    .clip(CircleShape)
-                    .background(animatedColor),
+            modifier = Modifier
+                .size(10.dp)
+                .alpha(pulseAlpha)
+                .drawBehind {
+                    drawCircle(
+                        color = animatedColor.copy(alpha = 0.4f),
+                        radius = size.minDimension / 2f * 1.8f,
+                    )
+                }
+                .clip(CircleShape)
+                .drawBehind {
+                    drawCircle(color = animatedColor)
+                },
         )
         Text(
             text = label,
