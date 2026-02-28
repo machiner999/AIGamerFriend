@@ -1,6 +1,5 @@
 package com.example.aigamerfriend.ui.component
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.Modifier
@@ -10,16 +9,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.example.aigamerfriend.ui.theme.GlassBg
-import com.example.aigamerfriend.ui.theme.GlassBorder
-import com.example.aigamerfriend.ui.theme.GlassHighlight
 
 fun Modifier.glassPanel(
     shape: Shape = RectangleShape,
-    bgAlpha: Float = 0.7f,
+    bgAlpha: Float = 0.82f,
     borderAlpha: Float = 0.08f,
 ): Modifier {
     val bgColor = Color.Black.copy(alpha = bgAlpha)
@@ -41,17 +35,6 @@ fun Modifier.glassPanel(
     )
 
     return this
-        .then(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                Modifier.graphicsLayer {
-                    renderEffect = android.graphics.RenderEffect
-                        .createBlurEffect(20f, 20f, android.graphics.Shader.TileMode.CLAMP)
-                        .asComposeRenderEffect()
-                }
-            } else {
-                Modifier
-            },
-        )
         .background(color = bgColor, shape = shape)
         .border(width = 1.dp, brush = borderBrush, shape = shape)
         .drawBehind {

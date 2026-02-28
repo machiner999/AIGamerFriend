@@ -85,7 +85,7 @@ fun GlassControlPanel(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .glassPanel(shape = panelShape, bgAlpha = 0.75f, borderAlpha = 0.1f)
+            .glassPanel(shape = panelShape, bgAlpha = 0.85f, borderAlpha = 0.1f)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -124,7 +124,7 @@ fun GlassControlPanel(
             Icon(
                 imageVector = Icons.Default.Settings,
                 contentDescription = "設定",
-                tint = Color.White.copy(alpha = 0.7f),
+                tint = Color.White.copy(alpha = 0.9f),
             )
         }
     }
@@ -133,7 +133,7 @@ fun GlassControlPanel(
 @Composable
 private fun StatusText(state: SessionState, modifier: Modifier = Modifier) {
     val (text, color) = when (state) {
-        is SessionState.Idle -> "タップしてゲーム友達を呼ぼう" to Color.White.copy(alpha = 0.7f)
+        is SessionState.Idle -> "タップしてゲーム友達を呼ぼう" to Color.White.copy(alpha = 0.9f)
         is SessionState.Connecting -> "接続中..." to StatusWarning
         is SessionState.Connected -> "ゲーム友達が見てるよ！" to NeonGreen
         is SessionState.Reconnecting -> "再接続中..." to StatusWarning
