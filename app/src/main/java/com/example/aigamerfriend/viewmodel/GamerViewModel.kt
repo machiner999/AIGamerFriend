@@ -575,8 +575,10 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         } else {
-            val detail = e.message ?: e.javaClass.simpleName
-            _sessionState.value = SessionState.Error("接続失敗: $detail")
+            if (BuildConfig.DEBUG) {
+                Log.e(TAG, "Connection failed after $MAX_RETRIES retries", e)
+            }
+            _sessionState.value = SessionState.Error("接続に失敗しました。通信環境を確認してください。")
         }
     }
 

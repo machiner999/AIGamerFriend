@@ -2,6 +2,7 @@ package com.example.aigamerfriend.data
 
 import android.util.Base64
 import android.util.Log
+import com.example.aigamerfriend.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -93,7 +94,9 @@ class GeminiLiveClient(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket failure: ${t.message} (response: ${response?.code} ${response?.message})", t)
+                if (BuildConfig.DEBUG) {
+                    Log.e(TAG, "WebSocket failure: ${t.message} (response: ${response?.code} ${response?.message})", t)
+                }
                 _connectionState.value = ConnectionState.ERROR
             }
 
@@ -144,17 +147,16 @@ class GeminiLiveClient(
         )
 
         val message = json.encodeToString(setup)
-        Log.d(TAG, "Setup message: $message")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Setup message: $message")
         webSocket?.send(message)
-        Log.d(TAG, "Setup message sent")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Setup message sent")
     }
 
     private fun handleMessage(text: String) {
         try {
             _lastMessageTimeMs.value = System.currentTimeMillis()
 
-            // Log first 500 chars to see what server sends
-            Log.d(TAG, "Server message: ${text.take(500)}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Server message: ${text.take(500)}")
 
             val msg = json.decodeFromString<GeminiServerMessage>(text)
 
@@ -174,7 +176,9 @@ class GeminiLiveClient(
 
                 msg.sessionResumptionUpdate != null -> {
                     val update = msg.sessionResumptionUpdate
-                    Log.d(TAG, "Session resumption update: handle=${update.newHandle?.take(20)}, resumable=${update.resumable}")
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "Session resumption update: handle=${update.newHandle?.take(20)}, resumable=${update.resumable}")
+                    }
                     if (update.newHandle != null) {
                         _latestResumeToken.value = update.newHandle
                     }
@@ -199,7 +203,7 @@ class GeminiLiveClient(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error parsing server message", e)
+            if (BuildConfig.DEBUG) Log.w(TAG, "Error parsing server message", e)
         }
     }
 
