@@ -8,7 +8,6 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +27,12 @@ class AudioManager {
     var onAudioDataAvailable: ((ByteArray) -> Unit)? = null
     var isMuted: Boolean = false
     var onAudioLevelUpdate: ((Float) -> Unit)? = null
-    var gainFactor: Float = 5.0f
+    var gainFactor: Float = 10.0f
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var aec: AcousticEchoCanceler? = null
     private var agc: AutomaticGainControl? = null
-    private var noiseSuppressor: NoiseSuppressor? = null
     private var recordJob: Job? = null
     private var scope: CoroutineScope? = null
 
@@ -79,14 +77,8 @@ class AudioManager {
                     Log.w(TAG, "Failed to enable AGC", e)
                 }
             }
-            if (NoiseSuppressor.isAvailable()) {
-                try {
-                    noiseSuppressor = NoiseSuppressor.create(sessionId)?.also { it.enabled = true }
-                    Log.d(TAG, "NoiseSuppressor enabled")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to enable NoiseSuppressor", e)
-                }
-            }
+            // NoiseSuppressor is intentionally disabled — at ~1m distance, it tends to
+            // classify the user's weakened voice signal as noise and suppress it.
         }
 
         audioRecord?.startRecording()
@@ -182,8 +174,6 @@ class AudioManager {
         aec = null
         agc?.release()
         agc = null
-        noiseSuppressor?.release()
-        noiseSuppressor = null
 
         try {
             audioRecord?.stop()

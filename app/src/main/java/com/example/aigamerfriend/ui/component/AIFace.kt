@@ -47,39 +47,39 @@ internal data class FaceParams(
 @VisibleForTesting
 internal fun paramsFor(emotion: Emotion): FaceParams = when (emotion) {
     Emotion.NEUTRAL -> FaceParams(
-        eyeY = 0.42f, eyeRadiusX = 0.06f, eyeRadiusY = 0.06f,
+        eyeY = 0.42f, eyeRadiusX = 0.07f, eyeRadiusY = 0.07f,
         browY = 0.30f, browAngle = 0f,
         mouthCurve = 0f, mouthOpenY = 0f,
     )
     Emotion.HAPPY -> FaceParams(
-        eyeY = 0.40f, eyeRadiusX = 0.06f, eyeRadiusY = 0.04f,
-        browY = 0.27f, browAngle = -5f,
-        mouthCurve = 0.08f, mouthOpenY = 0f,
+        eyeY = 0.40f, eyeRadiusX = 0.07f, eyeRadiusY = 0.04f,
+        browY = 0.25f, browAngle = -12f,
+        mouthCurve = 0.16f, mouthOpenY = 0f,
     )
     Emotion.EXCITED -> FaceParams(
-        eyeY = 0.40f, eyeRadiusX = 0.08f, eyeRadiusY = 0.08f,
-        browY = 0.24f, browAngle = -8f,
-        mouthCurve = 0.10f, mouthOpenY = 0.06f,
+        eyeY = 0.38f, eyeRadiusX = 0.10f, eyeRadiusY = 0.10f,
+        browY = 0.20f, browAngle = -16f,
+        mouthCurve = 0.18f, mouthOpenY = 0.12f,
     )
     Emotion.SURPRISED -> FaceParams(
-        eyeY = 0.40f, eyeRadiusX = 0.08f, eyeRadiusY = 0.09f,
-        browY = 0.22f, browAngle = 0f,
-        mouthCurve = 0f, mouthOpenY = 0.08f,
+        eyeY = 0.38f, eyeRadiusX = 0.10f, eyeRadiusY = 0.12f,
+        browY = 0.18f, browAngle = 0f,
+        mouthCurve = 0f, mouthOpenY = 0.14f,
     )
     Emotion.THINKING -> FaceParams(
-        eyeY = 0.43f, eyeRadiusX = 0.06f, eyeRadiusY = 0.04f,
-        browY = 0.29f, browAngle = 8f,
-        mouthCurve = -0.02f, mouthOpenY = 0f,
+        eyeY = 0.44f, eyeRadiusX = 0.07f, eyeRadiusY = 0.04f,
+        browY = 0.28f, browAngle = 15f,
+        mouthCurve = -0.04f, mouthOpenY = 0f,
     )
     Emotion.WORRIED -> FaceParams(
-        eyeY = 0.43f, eyeRadiusX = 0.06f, eyeRadiusY = 0.06f,
-        browY = 0.28f, browAngle = 10f,
-        mouthCurve = -0.06f, mouthOpenY = 0f,
+        eyeY = 0.44f, eyeRadiusX = 0.06f, eyeRadiusY = 0.06f,
+        browY = 0.26f, browAngle = 20f,
+        mouthCurve = -0.12f, mouthOpenY = 0f,
     )
     Emotion.SAD -> FaceParams(
-        eyeY = 0.44f, eyeRadiusX = 0.06f, eyeRadiusY = 0.04f,
-        browY = 0.30f, browAngle = 12f,
-        mouthCurve = -0.08f, mouthOpenY = 0f,
+        eyeY = 0.46f, eyeRadiusX = 0.06f, eyeRadiusY = 0.04f,
+        browY = 0.30f, browAngle = 22f,
+        mouthCurve = -0.16f, mouthOpenY = 0f,
     )
 }
 
@@ -155,18 +155,18 @@ fun AIFace(emotion: Emotion, modifier: Modifier = Modifier) {
         // Eyebrows
         drawBrow(
             centerX = w * 0.35f, y = h * browY,
-            length = w * 0.12f, angle = browAngle, leftSide = true,
+            length = w * 0.15f, angle = browAngle, leftSide = true,
         )
         drawBrow(
             centerX = w * 0.65f, y = h * browY,
-            length = w * 0.12f, angle = browAngle, leftSide = false,
+            length = w * 0.15f, angle = browAngle, leftSide = false,
         )
 
         // Mouth
         drawMouth(
             centerX = w * 0.5f,
             baseY = h * 0.62f,
-            width = w * 0.22f,
+            width = w * 0.26f,
             curve = h * mouthCurve,
             openHeight = h * mouthOpenY,
         )
@@ -190,13 +190,13 @@ private fun DrawScope.drawBrow(centerX: Float, y: Float, length: Float, angle: F
         color = NeonGreen,
         start = Offset(centerX - dx, y - dy),
         end = Offset(centerX + dx, y + dy),
-        strokeWidth = size.width * 0.025f,
+        strokeWidth = size.width * 0.035f,
         cap = StrokeCap.Round,
     )
 }
 
 private fun DrawScope.drawMouth(centerX: Float, baseY: Float, width: Float, curve: Float, openHeight: Float) {
-    val strokeW = size.width * 0.025f
+    val strokeW = size.width * 0.035f
     // Lower lip curve
     val lowerPath = Path().apply {
         moveTo(centerX - width, baseY)
@@ -204,7 +204,7 @@ private fun DrawScope.drawMouth(centerX: Float, baseY: Float, width: Float, curv
     }
     drawPath(lowerPath, color = NeonGreen, style = Stroke(width = strokeW, cap = StrokeCap.Round))
     // Upper lip curve (only visible when mouth opens)
-    if (openHeight > 0.5f) {
+    if (openHeight > 1f) {
         val upperPath = Path().apply {
             moveTo(centerX - width, baseY)
             quadraticTo(centerX, baseY - openHeight * 0.4f, centerX + width, baseY)
