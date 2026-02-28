@@ -36,9 +36,9 @@ Gemini Live APIに接続するには、`local.properties` に `GEMINI_API_KEY=yo
 
 **データフロー**: `CameraPreview` が1FPSでフレームをキャプチャし、短辺512pxにダウンスケール → `GamerViewModel.sendVideoFrame()` がJPEG（quality 60）に圧縮 → `GeminiLiveClient.sendVideoFrame()` がBase64エンコードして `realtimeInput.mediaChunks` でWebSocket送信 → Geminiが音声で応答（`serverContent.modelTurn.parts[].inlineData`）→ `AudioManager` がPCMデータをスピーカーで再生。マイク入力は `AudioManager` が16kHz PCMでキャプチャし `GeminiLiveClient.sendAudioChunk()` で送信。Function Call（感情変更、Google検索、ゲーム名検出）は `toolCall` メッセージで受信し、`GamerViewModel.handleFunctionCall()` で処理後 `toolResponse` を返送。
 
-**セッションライフサイクル** (`GamerViewModel`): Gemini Live APIには2分のハードリミットがある。`GamerViewModel` がタイマーを動かし、1:50で能動的に再接続する（`SESSION_DURATION_MS = 110_000L`）。再接続はConnect-Before-Disconnectパターン: 新セッション接続完了後、`SessionState.Connected` を設定する**前に**旧セッションを切断する（`reconnect()` → `connectSession(previousHandle)` → `openSession()` 成功 → `previousHandle.stopAudioConversation()` → `_sessionState = Connected`）。この順序は旧WebSocketの切断コールバックが新セッションのエラーハンドリングを誤発火させる競合状態を防ぐために重要。再接続時、バッファされた映像フレームからセッション要約を生成して `MemoryStore` に保存し、過去のセッション要約付きでシステムプロンプトを再送信して、AIが以前の会話を参照できるようにする。ネットワークエラー時は線形バックオフで最大3回リトライ（`RETRY_BASE_DELAY_MS * retryCount`、2秒から開始）。
+**セッションライフサイクル** (`GamerViewModel`): コンテキストウィンドウ圧縮（`contextWindowCompression: { slidingWindow: {} }`）を有効にすることで、従来の2分セッション制限を撤廃。WebSocket接続自体は~10分で切れるため、セッション再開（`sessionResumption`）機能を併用する。サーバーは切断前に**GoAway**メッセージを送信し、`GeminiLiveClient.onGoAway`コールバックで`reconnect()`を呼び出す。再接続時は`lastResumeToken`を使って文脈を維持したまま透明に再接続する。WebSocketが予期せず切断された場合も、resumeトークンがあればreconnect、なければ`handleConnectionError()`にフォールバック。再接続はConnect-Before-Disconnectパターン: 新セッション接続完了後、`SessionState.Connected` を設定する**前に**旧セッションを切断する（`reconnect()` → `connectSession(previousHandle)` → `openSession()` 成功 → `previousHandle.stopAudioConversation()` → `_sessionState = Connected`）。この順序は旧WebSocketの切断コールバックが新セッションのエラーハンドリングを誤発火させる競合状態を防ぐために重要。ネットワークエラー時は線形バックオフで最大3回リトライ（`RETRY_BASE_DELAY_MS * retryCount`、2秒から開始）。
 
-**記憶システム** (`MemoryStore` + `GamerViewModel`): 再接続ごとに、直近5フレームのバッファされた映像をnon-liveの `GenerativeModel`（`gemini-2.5-flash`）に送信し、1〜2文の日本語要約を生成する。要約はDataStore PreferencesにJSON配列として保存（最大10件、各200文字で切り詰め）。セッション接続時、保存済み要約をシステムプロンプトの `## これまでの記憶` セクションに追加する。記憶関連の操作はすべて非致命的 — 失敗時はログに記録して静かにスキップする。`MemoryStore` は `@VisibleForTesting internal var memoryStore` で注入可能、要約生成は `@VisibleForTesting internal var summarizer` ラムダで注入可能。
+**記憶システム** (`MemoryStore` + `GamerViewModel`): resumeトークンが使えない場合（初回接続、トークン期限切れ2時間）のフォールバックとして機能する。`generateAndStoreSummary()`は存在するが、通常のreconnectからは呼ばれない（コンテキストはサーバー側で維持される）。要約はDataStore PreferencesにJSON配列として保存（最大10件、各200文字で切り詰め）。セッション接続時、保存済み要約をシステムプロンプトの `## これまでの記憶` セクションに追加する。記憶関連の操作はすべて非致命的 — 失敗時はログに記録して静かにスキップする。`MemoryStore` は `@VisibleForTesting internal var memoryStore` で注入可能、要約生成は `@VisibleForTesting internal var summarizer` ラムダで注入可能。
 
 **ステートマシン（2層構造）**: ViewModel層の `SessionState`（`Idle → Connecting → Connected → Reconnecting → Connected` または `→ Error`）とWebSocket層の `ConnectionState`（`DISCONNECTED → CONNECTING → CONNECTED` または `→ ERROR`）がある。`GamerViewModel` は `SessionState` をUIに公開し、`GeminiLiveClient` の `ConnectionState` を内部で監視して `SessionState` に変換する。映像フレームは `SessionState.Connected` でのみ送信され、他の状態中のフレームは静かに破棄される。
 
@@ -50,7 +50,7 @@ Gemini Live APIに接続するには、`local.properties` に `GEMINI_API_KEY=yo
 
 **WebSocket通信層**（`data/` パッケージ）: Firebase AI Logic SDKの `parameters_json_schema` シリアライズ問題を回避するため、Live APIセッションはOkHttp WebSocketで直接接続する。3つのクラスで構成:
 - `GeminiLiveModels.kt` — `@Serializable` データクラス群（`GeminiSetupMessage`、`GeminiRealtimeInputMessage`、`GeminiServerMessage`、`GeminiToolResponseMessage`）。セットアップ、音声/映像送信、サーバー応答、ツール応答のJSON構造を定義。
-- `GeminiLiveClient.kt` — OkHttp WebSocketクライアント。`wss://generativelanguage.googleapis.com/ws/...v1alpha...BidiGenerateContent?key=` に接続。`connect()`/`disconnect()`/`sendVideoFrame()`/`sendAudioChunk()`/`sendToolResponse()` を公開。`onFunctionCall` コールバックでFunction Callを通知。`audioDataChannel: Channel<ByteArray>` で受信音声を流す。JSONシリアライズは `encodeDefaults = false` — `@Serializable` データクラスにデフォルト値を付けるとJSONに出力されないため、API必須フィールドにはデフォルト値を使わないこと。
+- `GeminiLiveClient.kt` — OkHttp WebSocketクライアント。`wss://generativelanguage.googleapis.com/ws/...v1alpha...BidiGenerateContent?key=` に接続。`connect()`/`disconnect()`/`sendVideoFrame()`/`sendAudioChunk()`/`sendToolResponse()` を公開。`enableCompression`（コンテキストウィンドウ圧縮）と`resumeHandle`（セッション再開トークン）パラメータをサポート。`onFunctionCall` コールバックでFunction Callを通知。`onGoAway` コールバックでGoAway受信を通知。`latestResumeToken: StateFlow<String?>` でサーバーから受信した最新のresumeトークンを公開。`audioDataChannel: Channel<ByteArray>` で受信音声を流す。JSONシリアライズは `encodeDefaults = false` — `@Serializable` データクラスにデフォルト値を付けるとJSONに出力されないため、API必須フィールドにはデフォルト値を使わないこと。
 - `AudioManager.kt` — マイク録音（16kHz mono PCM 16bit、チャンク2048B、`Dispatchers.IO`）とスピーカー再生（24kHz mono PCM 16bit、バッファ4倍）。`isMuted` フラグでマイク送信を抑制（録音自体は継続）。`onAudioLevelUpdate` コールバックでRMS音声レベル（0.0-1.0）を通知。`gainFactor`（デフォルト3.0f）でPCM 16bitサンプルをソフトウェア増幅し、クリッピング対応済み。増幅はAGC/NoiseSuppressorの後段で適用される。
 - `SettingsStore.kt` — DataStore Preferencesによるアプリ設定永続化（オンボーディングフラグ、声の種類、リアクション強度）。
 
@@ -68,7 +68,7 @@ Firebase AI Logic SDKは要約生成用の non-live `GenerativeModel`（`gemini-
 
 テストは `SessionHandle` インターフェース + `sessionConnector` ラムダでWebSocketクライアントをスタブ化する。`GamerViewModel.openSession()` は最初に `sessionConnector?.let { return it() }` をチェックするため、テストでは `viewModel.sessionConnector = { fakeHandle }` を設定するだけで `GeminiLiveClient`/`AudioManager` を完全にバイパスできる。`SessionHandle`（`stopAudioConversation()` + `sendVideoFrame(ByteArray)`）と `SessionState` sealed interfaceはどちらも `GamerViewModel.kt` に定義。パターンは `GamerViewModelTest.kt` を参照。
 
-テストファイル: `GamerViewModelTest.kt`（セッションライフサイクル、リトライ、感情処理、記憶統合、ミュート、ゲーム名、オンボーディング）、`GeminiLiveModelsTest.kt`（シリアライズ検証 — `parameters` vs `parameters_json_schema`、デシリアライズ）、`GeminiLiveClientTest.kt`（接続状態遷移、空APIキー）、`GamerScreenKtTest.kt`（触覚ロジック、状態ヘルパー）、`AIFaceKtTest.kt`（感情パラメータマッピング）、`StatusOverlayKtTest.kt`（オーバーレイ状態マッピング）、`CameraPreviewKtTest.kt`（フレームスロットルタイミング）、`EmotionTest.kt`（enumパース）、`PermissionHelperTest.kt`（パーミッションチェック）、`MemoryStoreTest.kt`（追加/取得/クリア/容量制限/切り詰め）、`SettingsStoreTest.kt`（オンボーディングフラグ、声・リアクション強度の読み書き）。
+テストファイル: `GamerViewModelTest.kt`（セッションライフサイクル、リトライ、感情処理、resumeトークン、ミュート、ゲーム名、オンボーディング）、`GeminiLiveModelsTest.kt`（シリアライズ検証 — `parameters` vs `parameters_json_schema`、圧縮・セッション再開・GoAway、デシリアライズ）、`GeminiLiveClientTest.kt`（接続状態遷移、空APIキー、resumeトークン初期値）、`GamerScreenKtTest.kt`（触覚ロジック、状態ヘルパー）、`AIFaceKtTest.kt`（感情パラメータマッピング）、`StatusOverlayKtTest.kt`（オーバーレイ状態マッピング）、`CameraPreviewKtTest.kt`（フレームスロットルタイミング）、`EmotionTest.kt`（enumパース）、`PermissionHelperTest.kt`（パーミッションチェック）、`MemoryStoreTest.kt`（追加/取得/クリア/容量制限/切り詰め）、`SettingsStoreTest.kt`（オンボーディングフラグ、声・リアクション強度の読み書き）。
 
 いくつかのソース関数は `@VisibleForTesting internal` マークされており、本来privateなロジックのユニットテストを可能にしている（例: AIFaceの `paramsFor()`、StatusOverlayの `statusOverlayInfo()`、CameraPreviewの `shouldCaptureFrame()` / `downscaleBitmap()`、GamerScreenの `isSessionActive()` / `hapticForSessionTransition()` / `hapticForEmotionChange()` / `HapticType`）。`testDebugUnitTest` のみ使用 — releaseユニットテストバリアントは存在しない。
 
@@ -81,7 +81,7 @@ GitHub Actions（`.github/workflows/ci.yml`）が `main` へのpush/PRで実行:
 ## 主な制約
 
 - minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — 横画面固定
-- セッションは1:50で自動再接続 — `SESSION_DURATION_MS` を120_000超に延長しないこと
+- コンテキストウィンドウ圧縮により2分制限は撤廃。WebSocket切断（~10分）はGoAway + sessionResumptionで透明に再接続
 - CameraX依存はalpha版（`1.5.0-alpha06`） — 更新時に破壊的API変更の可能性あり
 - フレームレートは `SnapshotFrameAnalyzer.captureIntervalMs` でスロットル — 1000ms以上を維持
 - システムプロンプトは日本語（AIキャラクターは日本語で話す）

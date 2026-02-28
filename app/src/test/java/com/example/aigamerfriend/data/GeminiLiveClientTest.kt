@@ -71,6 +71,18 @@ class GeminiLiveClientTest {
     }
 
     @Test
+    fun `latestResumeToken is initially null`() {
+        val client = GeminiLiveClient(
+            apiKey = "test-key",
+            modelName = "test-model",
+            systemInstruction = "test",
+            tools = emptyList(),
+        )
+
+        assertEquals(null, client.latestResumeToken.value)
+    }
+
+    @Test
     fun `disconnect sets state to DISCONNECTED`() = runTest {
         val client = GeminiLiveClient(
             apiKey = "test-key",

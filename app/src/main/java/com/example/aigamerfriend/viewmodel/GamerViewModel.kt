@@ -60,7 +60,6 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         private const val TAG = "GamerViewModel"
         private const val MODEL_NAME = "gemini-2.5-flash-native-audio-preview-12-2025"
         private const val SUMMARY_MODEL_NAME = "gemini-2.5-flash"
-        private const val SESSION_DURATION_MS = 110_000L // 1min 50sec (10sec before 2min limit)
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
         private const val JPEG_QUALITY = 60
@@ -91,7 +90,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
     private var audioManager: AudioManager? = null
     private var sessionHandle: SessionHandle? = null
-    private var sessionTimerJob: Job? = null
+    private var lastResumeToken: String? = null
     private var retryCount = 0
 
     private val recentFrames = ArrayDeque<ByteArray>(MAX_RECENT_FRAMES)
@@ -307,7 +306,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         audioManager?.isMuted = newValue
     }
 
-    private suspend fun openSession(memorySummary: String?): SessionHandle {
+    private suspend fun openSession(memorySummary: String?, resumeToken: String? = null): SessionHandle {
         sessionConnector?.let { return it() }
 
         val systemPrompt = buildSystemPrompt(memorySummary)
@@ -318,6 +317,8 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             systemInstruction = systemPrompt,
             tools = liveTools,
             voiceName = voiceName.value,
+            enableCompression = true,
+            resumeHandle = resumeToken,
         )
 
         val audio = AudioManager()
@@ -334,6 +335,13 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 mapOf<String, JsonElement>("error" to JsonPrimitive("Unknown function: $name"))
             }
             liveClient.sendToolResponse(callId, name, resultMap)
+        }
+
+        // Set up GoAway handler — server signals imminent disconnect (~10min)
+        liveClient.onGoAway = {
+            Log.d(TAG, "GoAway received, initiating reconnect with resume token")
+            lastResumeToken = liveClient.latestResumeToken.value
+            reconnect()
         }
 
         // Connect and wait for setupComplete
@@ -360,8 +368,15 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             liveClient.connectionState.collect { state ->
                 if (state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED) {
                     if (_sessionState.value is SessionState.Connected) {
-                        Log.w(TAG, "WebSocket disconnected unexpectedly: $state")
-                        handleConnectionError(RuntimeException("WebSocket disconnected"))
+                        val token = liveClient.latestResumeToken.value
+                        if (token != null) {
+                            Log.d(TAG, "WebSocket disconnected, resuming with token")
+                            lastResumeToken = token
+                            reconnect()
+                        } else {
+                            Log.w(TAG, "WebSocket disconnected unexpectedly: $state")
+                            handleConnectionError(RuntimeException("WebSocket disconnected"))
+                        }
                     }
                 }
             }
@@ -407,8 +422,6 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopSession() {
-        sessionTimerJob?.cancel()
-        sessionTimerJob = null
         try {
             sessionHandle?.stopAudioConversation()
         } catch (e: Exception) {
@@ -416,6 +429,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         }
         sessionHandle = null
         audioManager = null
+        lastResumeToken = null
         retryCount = 0
         recentFrames.clear()
         _currentEmotion.value = Emotion.NEUTRAL
@@ -464,7 +478,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 Log.w(TAG, "Failed to read memory, continuing without it", e)
                 null
             }
-            val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession(memorySummary) }
+            val handle = withTimeout(CONNECT_TIMEOUT_MS) { openSession(memorySummary, lastResumeToken) }
             // Stop previous session before setting Connected state to avoid race condition:
             // old monitorJob detecting DISCONNECTED while _sessionState is already Connected
             if (previousHandle != null) {
@@ -477,7 +491,6 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             sessionHandle = handle
             _sessionState.value = SessionState.Connected
             retryCount = 0
-            startSessionTimer()
             Log.d(TAG, "Session connected" + if (memorySummary != null) " (with memory)" else "")
         } catch (e: CancellationException) {
             previousHandle?.safeStop()
@@ -502,19 +515,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun startSessionTimer() {
-        sessionTimerJob?.cancel()
-        sessionTimerJob =
-            viewModelScope.launch {
-                delay(SESSION_DURATION_MS)
-                Log.d(TAG, "Session timer expired, reconnecting")
-                reconnect()
-            }
-    }
-
     private fun reconnect() {
-        generateAndStoreSummary()
-
         val previousHandle = sessionHandle
         sessionHandle = null
         _sessionState.value = SessionState.Reconnecting

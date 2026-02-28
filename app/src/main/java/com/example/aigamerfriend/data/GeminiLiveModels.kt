@@ -18,6 +18,25 @@ data class GeminiSetupMessage(
         @SerialName("system_instruction")
         val systemInstruction: SystemInstruction? = null,
         val tools: List<Tool>? = null,
+        @SerialName("contextWindowCompression")
+        val contextWindowCompression: ContextWindowCompression? = null,
+        @SerialName("sessionResumption")
+        val sessionResumption: SessionResumption? = null,
+    )
+
+    @Serializable
+    data class ContextWindowCompression(
+        val slidingWindow: SlidingWindow,
+    )
+
+    @Serializable
+    data class SlidingWindow(
+        val targetTokens: Long? = null,
+    )
+
+    @Serializable
+    data class SessionResumption(
+        val handle: String? = null,
     )
 
     @Serializable
@@ -136,6 +155,10 @@ data class GeminiServerMessage(
     val serverContent: ServerContent? = null,
     @SerialName("toolCall")
     val toolCall: ToolCall? = null,
+    @SerialName("sessionResumptionUpdate")
+    val sessionResumptionUpdate: SessionResumptionUpdate? = null,
+    @SerialName("goAway")
+    val goAway: GoAway? = null,
 ) {
     @Serializable
     class SetupComplete
@@ -177,5 +200,16 @@ data class GeminiServerMessage(
         val id: String,
         val name: String,
         val args: Map<String, JsonElement>? = null,
+    )
+
+    @Serializable
+    data class SessionResumptionUpdate(
+        val newHandle: String? = null,
+        val resumable: Boolean? = null,
+    )
+
+    @Serializable
+    data class GoAway(
+        val timeLeft: String? = null,
     )
 }

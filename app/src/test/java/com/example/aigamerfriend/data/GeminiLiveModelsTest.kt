@@ -107,6 +107,80 @@ class GeminiLiveModelsTest {
     }
 
     @Test
+    fun `setup message with context window compression serializes correctly`() {
+        val setup = GeminiSetupMessage(
+            setup = GeminiSetupMessage.Setup(
+                model = "models/test-model",
+                generationConfig = GeminiSetupMessage.GenerationConfig(
+                    responseModalities = listOf("AUDIO"),
+                ),
+                contextWindowCompression = GeminiSetupMessage.ContextWindowCompression(
+                    slidingWindow = GeminiSetupMessage.SlidingWindow(),
+                ),
+                sessionResumption = GeminiSetupMessage.SessionResumption(),
+            ),
+        )
+
+        val encoded = json.encodeToString(setup)
+        assertTrue("Should contain contextWindowCompression", encoded.contains("\"contextWindowCompression\""))
+        assertTrue("Should contain slidingWindow", encoded.contains("\"slidingWindow\""))
+        assertTrue("Should contain sessionResumption", encoded.contains("\"sessionResumption\""))
+        // targetTokens is null and should be omitted (encodeDefaults=false)
+        assertFalse("Null targetTokens should be omitted", encoded.contains("targetTokens"))
+        // handle is null and should be omitted
+        assertFalse("Null handle should be omitted", encoded.contains("handle"))
+    }
+
+    @Test
+    fun `setup message with session resumption handle serializes correctly`() {
+        val setup = GeminiSetupMessage(
+            setup = GeminiSetupMessage.Setup(
+                model = "models/test-model",
+                generationConfig = GeminiSetupMessage.GenerationConfig(
+                    responseModalities = listOf("AUDIO"),
+                ),
+                sessionResumption = GeminiSetupMessage.SessionResumption(handle = "resume-token-abc"),
+            ),
+        )
+
+        val encoded = json.encodeToString(setup)
+        assertTrue("Should contain handle", encoded.contains("\"handle\""))
+        assertTrue("Should contain token value", encoded.contains("resume-token-abc"))
+    }
+
+    @Test
+    fun `sessionResumptionUpdate is deserialized correctly`() {
+        val serverJson = """
+            {
+                "sessionResumptionUpdate": {
+                    "newHandle": "token-xyz-123",
+                    "resumable": true
+                }
+            }
+        """.trimIndent()
+
+        val msg = json.decodeFromString<GeminiServerMessage>(serverJson)
+        assertNotNull(msg.sessionResumptionUpdate)
+        assertEquals("token-xyz-123", msg.sessionResumptionUpdate!!.newHandle)
+        assertEquals(true, msg.sessionResumptionUpdate!!.resumable)
+    }
+
+    @Test
+    fun `goAway is deserialized correctly`() {
+        val serverJson = """
+            {
+                "goAway": {
+                    "timeLeft": "30s"
+                }
+            }
+        """.trimIndent()
+
+        val msg = json.decodeFromString<GeminiServerMessage>(serverJson)
+        assertNotNull(msg.goAway)
+        assertEquals("30s", msg.goAway!!.timeLeft)
+    }
+
+    @Test
     fun `serverContent with audio is deserialized correctly`() {
         val serverJson = """
             {

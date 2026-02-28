@@ -33,6 +33,8 @@ class GeminiLiveClient(
     private val systemInstruction: String,
     private val tools: List<GeminiSetupMessage.Tool>,
     private val voiceName: String = "AOEDE",
+    private val enableCompression: Boolean = true,
+    private val resumeHandle: String? = null,
 ) {
     companion object {
         private const val TAG = "GeminiLiveClient"
@@ -50,6 +52,10 @@ class GeminiLiveClient(
     val audioDataChannel = Channel<ByteArray>(Channel.UNLIMITED)
 
     var onFunctionCall: ((name: String, callId: String, args: Map<String, JsonElement>?) -> Unit)? = null
+    var onGoAway: (() -> Unit)? = null
+
+    private val _latestResumeToken = MutableStateFlow<String?>(null)
+    val latestResumeToken: StateFlow<String?> = _latestResumeToken.asStateFlow()
 
     private var webSocket: WebSocket? = null
     private var client: OkHttpClient? = null
@@ -101,6 +107,20 @@ class GeminiLiveClient(
     }
 
     private fun sendSetupMessage() {
+        val compression = if (enableCompression) {
+            GeminiSetupMessage.ContextWindowCompression(
+                slidingWindow = GeminiSetupMessage.SlidingWindow(),
+            )
+        } else {
+            null
+        }
+
+        val sessionResumption = if (enableCompression) {
+            GeminiSetupMessage.SessionResumption(handle = resumeHandle)
+        } else {
+            null
+        }
+
         val setup = GeminiSetupMessage(
             setup = GeminiSetupMessage.Setup(
                 model = "models/$modelName",
@@ -118,6 +138,8 @@ class GeminiLiveClient(
                     parts = listOf(GeminiSetupMessage.Part(text = systemInstruction)),
                 ),
                 tools = tools.ifEmpty { null },
+                contextWindowCompression = compression,
+                sessionResumption = sessionResumption,
             ),
         )
 
@@ -147,6 +169,21 @@ class GeminiLiveClient(
                         scope?.launch(Dispatchers.Main) {
                             onFunctionCall?.invoke(call.name, call.id, call.args)
                         }
+                    }
+                }
+
+                msg.sessionResumptionUpdate != null -> {
+                    val update = msg.sessionResumptionUpdate
+                    Log.d(TAG, "Session resumption update: handle=${update.newHandle?.take(20)}, resumable=${update.resumable}")
+                    if (update.newHandle != null) {
+                        _latestResumeToken.value = update.newHandle
+                    }
+                }
+
+                msg.goAway != null -> {
+                    Log.d(TAG, "GoAway received: timeLeft=${msg.goAway.timeLeft}")
+                    scope?.launch(Dispatchers.Main) {
+                        onGoAway?.invoke()
                     }
                 }
 

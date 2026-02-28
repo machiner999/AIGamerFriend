@@ -220,18 +220,17 @@ class GamerViewModelTest {
         }
 
     @Test
-    fun `session timer triggers auto reconnect`() =
+    fun `no timer-based auto reconnect occurs`() =
         viewModelTest {
             viewModel.startSession()
             assertEquals(SessionState.Connected, viewModel.sessionState.value)
             assertEquals(1, connectCallCount)
 
-            // Advance past session duration (110_000ms)
-            testScheduler.advanceTimeBy(110_001)
+            // Advance past old session duration — no auto-reconnect should happen
+            testScheduler.advanceTimeBy(120_000)
 
-            // Should auto-reconnect and end up Connected again
             assertEquals(SessionState.Connected, viewModel.sessionState.value)
-            assertEquals(2, connectCallCount)
+            assertEquals(1, connectCallCount)
         }
 
     @Test
@@ -278,36 +277,16 @@ class GamerViewModelTest {
     }
 
     @Test
-    fun `summary generation is triggered on reconnect`() =
+    fun `stopSession clears resume token`() =
         viewModelTest {
-            var summarizerCalled = false
-            viewModel.summarizer = {
-                summarizerCalled = true
-                "Test summary"
-            }
-
             viewModel.startSession()
             assertEquals(SessionState.Connected, viewModel.sessionState.value)
 
-            // Advance past session duration to trigger reconnect
-            testScheduler.advanceTimeBy(110_001)
+            viewModel.stopSession()
 
-            // Session should reconnect successfully
-            assertEquals(SessionState.Connected, viewModel.sessionState.value)
-        }
-
-    @Test
-    fun `memory failure does not break session flow`() =
-        viewModelTest {
-            viewModel.summarizer = { throw RuntimeException("Summary failed") }
-
+            assertEquals(SessionState.Idle, viewModel.sessionState.value)
+            // Starting a new session should work fresh (no stale resume token)
             viewModel.startSession()
-            assertEquals(SessionState.Connected, viewModel.sessionState.value)
-
-            // Advance past session duration to trigger reconnect
-            testScheduler.advanceTimeBy(110_001)
-
-            // Session should still reconnect successfully despite summary failure
             assertEquals(SessionState.Connected, viewModel.sessionState.value)
             assertEquals(2, connectCallCount)
         }
