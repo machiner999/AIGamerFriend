@@ -9,8 +9,9 @@ Android端末の背面カメラでゲーム画面を映すと、カジュアル�
 - AIの感情を反映するアニメーション顔表示（7種類: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD）
 - Function Callingによるゲーム名自動検出・表示
 - Google検索による攻略情報の検索・回答
-- 2分のセッション制限に対する自動再接続（1分50秒で再接続、Connect-Before-Disconnectパターン）
-- セッション間の会話記憶（要約生成・自動引き継ぎ）
+- コンテキストウィンドウ圧縮による無制限セッション（2分制限を撤廃）
+- セッション再開トークンによるWebSocket切断時の透明な再接続（GoAway対応）
+- セッション間の会話記憶（要約生成・フォールバック引き継ぎ）
 - ミュート機能・音声レベルインジケーター
 - マイク音声のソフトウェアゲイン増幅（デフォルト2倍）
 - 設定画面（声の種類・リアクション強度・記憶クリア）
@@ -92,12 +93,12 @@ Function Call (感情/ゲーム名/検索) → GamerViewModel.handleFunctionCall
 
 ### セッション管理
 
-Gemini Live APIは1セッション最大2分の制限があるため、`GamerViewModel`が1分50秒でプロアクティブに再接続します。再接続時は新セッション接続完了後に旧セッションを切断し、音声途切れを最小化します。再接続時にバッファされた映像フレームから要約を生成し、会話の文脈を引き継ぎます。ネットワークエラー時は最大3回までリニアバックオフでリトライします。
+コンテキストウィンドウ圧縮（`contextWindowCompression: { slidingWindow: {} }`）を有効にすることで、従来の2分セッション制限を撤廃しています。WebSocket接続自体は約10分で切れるため、セッション再開（`sessionResumption`）機能を併用し、サーバーからのGoAwayメッセージを受信して切断前に能動的に再接続します。再接続時はresumeトークンを使って文脈を維持したまま透明に再接続します。resumeトークンが使えない場合（初回接続、トークン期限切れ）は、MemoryStoreの要約記憶がフォールバックとして機能します。ネットワークエラー時は最大3回までリニアバックオフでリトライします。
 
 ### 状態遷移
 
 ```
-SessionState: Idle → Connecting → Connected → Reconnecting → Connected (ループ)
+SessionState: Idle → Connecting → Connected ←→ Reconnecting (GoAway/切断時)
                                              → Error (リトライ上限超過)
 
 ConnectionState (WebSocket層): DISCONNECTED → CONNECTING → CONNECTED / ERROR
