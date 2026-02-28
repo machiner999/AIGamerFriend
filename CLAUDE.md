@@ -51,18 +51,18 @@ Gemini Live APIに接続するには、`local.properties` に `GEMINI_API_KEY=yo
 **WebSocket通信層**（`data/` パッケージ）: Firebase AI Logic SDKの `parameters_json_schema` シリアライズ問題を回避するため、Live APIセッションはOkHttp WebSocketで直接接続する。3つのクラスで構成:
 - `GeminiLiveModels.kt` — `@Serializable` データクラス群（`GeminiSetupMessage`、`GeminiRealtimeInputMessage`、`GeminiServerMessage`、`GeminiToolResponseMessage`）。セットアップ、音声/映像送信、サーバー応答、ツール応答のJSON構造を定義。
 - `GeminiLiveClient.kt` — OkHttp WebSocketクライアント。`wss://generativelanguage.googleapis.com/ws/...v1alpha...BidiGenerateContent?key=` に接続。`connect()`/`disconnect()`/`sendVideoFrame()`/`sendAudioChunk()`/`sendToolResponse()` を公開。`enableCompression`（コンテキストウィンドウ圧縮）と`resumeHandle`（セッション再開トークン）パラメータをサポート。`onFunctionCall` コールバックでFunction Callを通知。`onGoAway` コールバックでGoAway受信を通知。`latestResumeToken: StateFlow<String?>` でサーバーから受信した最新のresumeトークンを公開。`audioDataChannel: Channel<ByteArray>` で受信音声を流す。JSONシリアライズは `encodeDefaults = false` — `@Serializable` データクラスにデフォルト値を付けるとJSONに出力されないため、API必須フィールドにはデフォルト値を使わないこと。
-- `AudioManager.kt` — マイク録音（16kHz mono PCM 16bit、チャンク2048B、`Dispatchers.IO`）とスピーカー再生（24kHz mono PCM 16bit、バッファ4倍）。`isMuted` フラグでマイク送信を抑制（録音自体は継続）。`onAudioLevelUpdate` コールバックでRMS音声レベル（0.0-1.0）を通知。`gainFactor`（デフォルト3.0f）でPCM 16bitサンプルをソフトウェア増幅し、クリッピング対応済み。増幅はAGC/NoiseSuppressorの後段で適用される。
+- `AudioManager.kt` — マイク録音（`VOICE_COMMUNICATION`ソース、16kHz mono PCM 16bit、チャンク2048B、`Dispatchers.IO`）とスピーカー再生（24kHz mono PCM 16bit、バッファ4倍）。`AcousticEchoCanceler`（AEC）、AGC、NoiseSuppressorをハードウェアレベルで有効化。`isMuted` フラグでマイク送信を抑制（録音自体は継続）。`onAudioLevelUpdate` コールバックでRMS音声レベル（0.0-1.0）を通知。`gainFactor`（デフォルト5.0f）でPCM 16bitサンプルをソフトウェア増幅し、クリッピング対応済み。増幅はAGC/NoiseSuppressor/AECの後段で適用される。
 - `SettingsStore.kt` — DataStore Preferencesによるアプリ設定永続化（オンボーディングフラグ、声の種類、リアクション強度）。
 
 `GamerViewModel.openSession()` がこれらを組み立て、`SessionHandle` インターフェース（`stopAudioConversation()` + `sendVideoFrame(ByteArray)`）で抽象化して返す。テストでは `viewModel.sessionConnector` ラムダに偽の `SessionHandle` を注入することで、WebSocket/AudioManagerを一切使わずにセッションライフサイクルをテストできる。
 
 Firebase AI Logic SDKは要約生成用の non-live `GenerativeModel`（`gemini-2.5-flash`）にのみ使用。`@OptIn(PublicPreviewAPI::class)` は要約モデル用に残る。`kotlinx-serialization-json` はWebSocketプロトコルモデルとFirebase AI SDKの両方で必要。
 
-**ツールはOkHttp WebSocket直接接続で有効**: 感情関数（`setEmotion_*`、`parameters = null`）、ゲーム名検出（`setGameName`、`parameters` = OBJECT with `name: STRING`）、Google検索（`"google_search": {}`）を `tools` リストに格納し、セットアップメッセージで送信。firebase-aiは `17.8.0!!`（strict）に固定してBOMによる上書きを防止（要約モデル用）。
+**ツールはOkHttp WebSocket直接接続で有効**: 感情関数（`setEmotion_*`、`parameters = null`）、ゲーム名検出（`setGameName`、`parameters` = OBJECT with `name: STRING`）、Google検索（`"google_search": {}`）を `tools` リストに格納し、セットアップメッセージで送信。firebase-aiはBOM管理（要約モデル用のみ使用、Live APIはOkHttp直接接続のためピン不要）。
 
 **Firebase AI SDK復帰メモ**: Firebase AI SDKが `parameters_json_schema` 問題を修正した場合、`GeminiLiveClient`/`AudioManager`/`GeminiLiveModels`を削除し、`openSession()`でFirebase `liveModel`に戻すことで復帰可能。`SessionHandle`インターフェースを`sendVideoRealtime(InlineData)`に戻し、`handleFunctionCall`を`FunctionCallPart`/`FunctionResponsePart`型に戻す。テストの`fakeHandle`も合わせて更新。
 
-**ビルドツールチェーン**: AGP 9.0.1 / Gradle 9.3.1、Kotlin内蔵（`org.jetbrains.kotlin.android` プラグインなし）。KotlinコンパイルはAGPが直接処理する。Composeコンパイラプラグイン（`org.jetbrains.kotlin.plugin.compose` v2.2.10）とKotlin Serializationプラグイン（`org.jetbrains.kotlin.plugin.serialization` v2.2.10）は別途適用。Geminiモデルは `gemini-2.5-flash-native-audio-preview-12-2025`（プレビュー版 — 更新が必要になる可能性あり）。APIキーは `local.properties` の `GEMINI_API_KEY` から `BuildConfig.GEMINI_API_KEY` に注入。
+**ビルドツールチェーン**: AGP 9.0.1 / Gradle 9.3.1、Kotlin内蔵（`org.jetbrains.kotlin.android` プラグインなし）。KotlinコンパイルはAGPが直接処理する。Composeコンパイラプラグイン（`org.jetbrains.kotlin.plugin.compose` v2.2.10）とKotlin Serializationプラグイン（`org.jetbrains.kotlin.plugin.serialization` v2.2.10）は別途適用。Geminiモデルは `gemini-2.5-flash-native-audio-preview-12-2025`（プレビュー版 — 更新が必要になる可能性あり）。APIキーは `local.properties` の `GEMINI_API_KEY` から `BuildConfig.GEMINI_API_KEY` に注入。リリースビルドは `isMinifyEnabled = true` + `isShrinkResources = true` でR8難読化・リソース圧縮を適用。`proguard-rules.pro` にkotlinx-serialization（`data/**` パッケージのシリアライザ保持）、OkHttp、Firebaseのkeepルールあり。新しい `@Serializable` クラスを `data/` パッケージに追加した場合は既存ルールでカバーされるが、別パッケージに追加する場合はkeepルールの追加が必要。
 
 ## テスト
 
@@ -78,11 +78,18 @@ Firebase AI Logic SDKは要約生成用の non-live `GenerativeModel`（`gemini-
 
 GitHub Actions（`.github/workflows/ci.yml`）が `main` へのpush/PRで実行: ktlintCheck → testDebugUnitTest → assembleRelease。Google Servicesプラグインが失敗しないよう、ダミーの `google-services.json` を生成する。
 
+## セキュリティ
+
+- `android:allowBackup="false"` — ADB backup経由のデータ抽出を防止
+- `network_security_config.xml` で `cleartextTrafficPermitted="false"` — 全通信HTTPS強制
+- `GeminiLiveClient.kt` のセンシティブなログ出力（セットアップメッセージ全文、サーバーメッセージ、resumeトークン、例外スタックトレース）は `if (BuildConfig.DEBUG)` でガード済み。新しいログ追加時は同様にガードすること
+- ユーザー向けエラーメッセージに例外の詳細（`e.message`）を含めないこと。`handleConnectionError()` パターン参照: 技術詳細はDEBUGログに出力し、UIには `"接続に失敗しました。通信環境を確認してください。"` のような汎用メッセージを表示
+
 ## 主な制約
 
-- minSdk 26 (Android 8.0) / targetSdk 35 (Android 15) — 横画面固定
+- minSdk 26 (Android 8.0) / compileSdk 36 / targetSdk 35 (Android 15) — 横画面固定
 - コンテキストウィンドウ圧縮により2分制限は撤廃。WebSocket切断（~10分）はGoAway + sessionResumptionで透明に再接続
-- CameraX依存はalpha版（`1.5.0-alpha06`） — 更新時に破壊的API変更の可能性あり
+- CameraX 1.5.1（stable） — `setTargetResolution` は非推奨だが動作する
 - フレームレートは `SnapshotFrameAnalyzer.captureIntervalMs` でスロットル — 1000ms以上を維持
 - システムプロンプトは日本語（AIキャラクターは日本語で話す）
 - `app/google-services.json` は絶対にコミットしないこと（APIキーを含む）。正しいパッケージ名（`com.example.aigamerfriend`）のFirebase Consoleからダウンロード必須 — JSON内のパッケージ名を手動編集しないこと

@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.util.Log
@@ -27,10 +28,11 @@ class AudioManager {
     var onAudioDataAvailable: ((ByteArray) -> Unit)? = null
     var isMuted: Boolean = false
     var onAudioLevelUpdate: ((Float) -> Unit)? = null
-    var gainFactor: Float = 3.0f
+    var gainFactor: Float = 5.0f
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+    private var aec: AcousticEchoCanceler? = null
     private var agc: AutomaticGainControl? = null
     private var noiseSuppressor: NoiseSuppressor? = null
     private var recordJob: Job? = null
@@ -52,7 +54,7 @@ class AudioManager {
         )
 
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
             RECORD_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -61,6 +63,14 @@ class AudioManager {
 
         audioRecord?.let { record ->
             val sessionId = record.audioSessionId
+            if (AcousticEchoCanceler.isAvailable()) {
+                try {
+                    aec = AcousticEchoCanceler.create(sessionId)?.also { it.enabled = true }
+                    Log.d(TAG, "AEC enabled")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to enable AEC", e)
+                }
+            }
             if (AutomaticGainControl.isAvailable()) {
                 try {
                     agc = AutomaticGainControl.create(sessionId)?.also { it.enabled = true }
@@ -168,6 +178,8 @@ class AudioManager {
         recordJob?.cancel()
         recordJob = null
 
+        aec?.release()
+        aec = null
         agc?.release()
         agc = null
         noiseSuppressor?.release()
