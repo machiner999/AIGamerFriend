@@ -118,6 +118,9 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     private val _reactionIntensity = MutableStateFlow("ふつう")
     val reactionIntensity: StateFlow<String> = _reactionIntensity.asStateFlow()
 
+    private val _autoStart = MutableStateFlow(false)
+    val autoStart: StateFlow<Boolean> = _autoStart.asStateFlow()
+
     private var settingsLoadJob: Job? = null
 
     init {
@@ -148,6 +151,13 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                     Log.w(TAG, "Failed to read reaction intensity", e)
                 }
             }
+            launch {
+                try {
+                    store.autoStartFlow().collect { _autoStart.value = it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read auto start", e)
+                }
+            }
         }
     }
 
@@ -157,6 +167,10 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setReactionIntensity(intensity: String) {
         viewModelScope.launch { settingsStore.setReactionIntensity(intensity) }
+    }
+
+    fun setAutoStart(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setAutoStart(enabled) }
     }
 
     fun clearMemory() {
@@ -193,18 +207,30 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             },
             parameters = null,
         )
-    } + GeminiSetupMessage.FunctionDeclaration(
-        name = "setGameName",
-        description = "プレイしているゲームのタイトル名を設定する",
-        parameters = GeminiSetupMessage.FunctionParameters(
-            type = "OBJECT",
-            properties = mapOf(
-                "name" to GeminiSetupMessage.PropertySchema(
-                    type = "STRING",
-                    description = "ゲームのタイトル名",
+    } + listOf(
+        GeminiSetupMessage.FunctionDeclaration(
+            name = "setGameName",
+            description = "プレイしているゲームのタイトル名を設定する",
+            parameters = GeminiSetupMessage.FunctionParameters(
+                type = "OBJECT",
+                properties = mapOf(
+                    "name" to GeminiSetupMessage.PropertySchema(
+                        type = "STRING",
+                        description = "ゲームのタイトル名",
+                    ),
                 ),
+                required = listOf("name"),
             ),
-            required = listOf("name"),
+        ),
+        GeminiSetupMessage.FunctionDeclaration(
+            name = "stopSession",
+            description = "セッションを終了する。ユーザーが「終わり」「やめる」「ストップ」「終了して」「もういい」などと言った時に呼び出す",
+            parameters = null,
+        ),
+        GeminiSetupMessage.FunctionDeclaration(
+            name = "toggleMute",
+            description = "マイクのミュートを切り替える。ユーザーが「ミュート」「黙って」「静かにして」などと言った時に呼び出す",
+            parameters = null,
         ),
     )
 
@@ -246,6 +272,12 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
         ## ゲーム認識
         プレイしているゲームが分かったら setGameName 関数でゲーム名を設定しろ。ゲームが変わったら再度呼び出せ。
+
+        ## 音声コマンド
+        ユーザーが以下のような発言をしたら、対応する関数を呼び出せ：
+        - 「終わり」「やめる」「ストップ」「終了して」「もういい」→ stopSession
+        - 「ミュート」「黙って」「静かにして」→ toggleMute
+        ゲームの文脈での「終わり」（例：「このステージ終わりだ」）には反応するな。
         """.trimIndent()
 
     private fun buildSystemPrompt(memorySummary: String?): String {
@@ -293,6 +325,14 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     """{"error": "Missing name argument"}"""
                 }
+            }
+            name == "stopSession" -> {
+                viewModelScope.launch { stopSession() }
+                """{"success": true}"""
+            }
+            name == "toggleMute" -> {
+                toggleMute()
+                """{"success": true}"""
             }
             else -> {
                 """{"error": "Unknown function: $name"}"""

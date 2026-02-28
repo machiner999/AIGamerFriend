@@ -68,6 +68,7 @@ class GamerViewModelTest {
         coEvery { mockSettingsStore.isOnboardingShown() } returns true
         every { mockSettingsStore.voiceNameFlow() } returns flowOf("AOEDE")
         every { mockSettingsStore.reactionIntensityFlow() } returns flowOf("ふつう")
+        every { mockSettingsStore.autoStartFlow() } returns flowOf(false)
 
         // Mock the settingsDataStore extension property so the ViewModel init doesn't crash
         val mockDataStore = mockk<DataStore<Preferences>>(relaxed = true)
@@ -342,6 +343,28 @@ class GamerViewModelTest {
     }
 
     @Test
+    fun `handleFunctionCall stopSession transitions to Idle`() =
+        viewModelTest {
+            viewModel.startSession()
+            assertEquals(SessionState.Connected, viewModel.sessionState.value)
+
+            viewModel.handleFunctionCall("stopSession", "call-1")
+
+            // stopSession is launched asynchronously via viewModelScope
+            assertEquals(SessionState.Idle, viewModel.sessionState.value)
+            assertTrue(stopCalled)
+        }
+
+    @Test
+    fun `handleFunctionCall toggleMute flips mute state`() {
+        assertFalse(viewModel.isMuted.value)
+
+        val result = viewModel.handleFunctionCall("toggleMute", "call-1")
+        assertTrue(viewModel.isMuted.value)
+        assertTrue(result.contains("success"))
+    }
+
+    @Test
     fun `dismissOnboarding sets showOnboarding to false`() =
         viewModelTest {
             // By default our mock says onboarding is shown, so showOnboarding starts false
@@ -350,6 +373,7 @@ class GamerViewModelTest {
             coEvery { mockSettingsStore2.isOnboardingShown() } returns false
             every { mockSettingsStore2.voiceNameFlow() } returns flowOf("AOEDE")
             every { mockSettingsStore2.reactionIntensityFlow() } returns flowOf("ふつう")
+            every { mockSettingsStore2.autoStartFlow() } returns flowOf(false)
             viewModel.settingsStore = mockSettingsStore2
 
             // Re-trigger init check manually (since init already ran)

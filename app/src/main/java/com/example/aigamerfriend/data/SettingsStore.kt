@@ -14,6 +14,7 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         private val KEY_ONBOARDING_SHOWN = booleanPreferencesKey("onboarding_shown")
         private val KEY_VOICE_NAME = stringPreferencesKey("voice_name")
         private val KEY_REACTION_INTENSITY = stringPreferencesKey("reaction_intensity")
+        private val KEY_AUTO_START = booleanPreferencesKey("auto_start")
     }
 
     suspend fun isOnboardingShown(): Boolean =
@@ -35,5 +36,12 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setReactionIntensity(intensity: String) {
         dataStore.edit { it[KEY_REACTION_INTENSITY] = intensity }
+    }
+
+    fun autoStartFlow(): Flow<Boolean> =
+        dataStore.data.map { it[KEY_AUTO_START] ?: false }
+
+    suspend fun setAutoStart(enabled: Boolean) {
+        dataStore.edit { it[KEY_AUTO_START] = enabled }
     }
 }

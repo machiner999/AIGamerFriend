@@ -65,4 +65,15 @@ class SettingsStoreTest {
         store.setReactionIntensity("テンション高め")
         assertEquals("テンション高め", store.reactionIntensityFlow().first())
     }
+
+    @Test
+    fun `default auto start is false`() = runSettingsTest { store ->
+        assertFalse(store.autoStartFlow().first())
+    }
+
+    @Test
+    fun `setAutoStart updates flow`() = runSettingsTest { store ->
+        store.setAutoStart(true)
+        assertTrue(store.autoStartFlow().first())
+    }
 }

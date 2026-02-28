@@ -51,6 +51,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -133,6 +135,7 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val showOnboarding by viewModel.showOnboarding.collectAsStateWithLifecycle()
     val voiceName by viewModel.voiceName.collectAsStateWithLifecycle()
     val reactionIntensity by viewModel.reactionIntensity.collectAsStateWithLifecycle()
+    val autoStart by viewModel.autoStart.collectAsStateWithLifecycle()
     var hasPermissions by remember { mutableStateOf(PermissionHelper.hasAllPermissions(context)) }
     var showSettings by remember { mutableStateOf(false) }
 
@@ -165,6 +168,13 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     // Stop session when leaving the screen
     DisposableEffect(Unit) {
         onDispose { viewModel.stopSession() }
+    }
+
+    // Auto-start session when enabled and permissions are granted
+    LaunchedEffect(hasPermissions, autoStart) {
+        if (hasPermissions && autoStart && sessionState is SessionState.Idle) {
+            viewModel.startSession()
+        }
     }
 
     // Haptic feedback for state changes
@@ -325,6 +335,8 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
             onVoiceNameChange = { viewModel.setVoiceName(it) },
             reactionIntensity = reactionIntensity,
             onReactionIntensityChange = { viewModel.setReactionIntensity(it) },
+            autoStart = autoStart,
+            onAutoStartChange = { viewModel.setAutoStart(it) },
             onClearMemory = { viewModel.clearMemory() },
             onDismiss = { showSettings = false },
         )
@@ -542,6 +554,8 @@ private fun SettingsBottomSheet(
     onVoiceNameChange: (String) -> Unit,
     reactionIntensity: String,
     onReactionIntensityChange: (String) -> Unit,
+    autoStart: Boolean,
+    onAutoStartChange: (Boolean) -> Unit,
     onClearMemory: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -629,6 +643,36 @@ private fun SettingsBottomSheet(
                         ),
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Auto-start
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "自動スタート",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "アプリ起動時に自動でセッションを開始",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                    )
+                }
+                Switch(
+                    checked = autoStart,
+                    onCheckedChange = onAutoStartChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = NeonGreen,
+                    ),
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))

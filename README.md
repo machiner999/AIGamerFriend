@@ -9,12 +9,14 @@ Android端末の背面カメラでゲーム画面を映すと、カジュアル�
 - AIの感情を反映するアニメーション顔表示（7種類: NEUTRAL, HAPPY, EXCITED, SURPRISED, THINKING, WORRIED, SAD）
 - Function Callingによるゲーム名自動検出・表示
 - Google検索による攻略情報の検索・回答
+- 音声コマンドによるハンズフリー操作（セッション終了・ミュート切替）
+- アプリ起動時の自動セッション開始オプション
 - コンテキストウィンドウ圧縮による無制限セッション（2分制限を撤廃）
 - セッション再開トークンによるWebSocket切断時の透明な再接続（GoAway対応）
 - セッション間の会話記憶（要約生成・フォールバック引き継ぎ）
 - ミュート機能・音声レベルインジケーター
 - マイク音声のソフトウェアゲイン増幅（デフォルト2倍）
-- 設定画面（声の種類・リアクション強度・記憶クリア）
+- 設定画面（声の種類・リアクション強度・自動スタート・記憶クリア）
 - 初回オンボーディング画面
 - 触覚フィードバック（接続/エラー/感情変化時）
 
@@ -88,7 +90,7 @@ CameraPreview (1FPS, 短辺512px)
 
 マイク入力 (16kHz PCM) → ソフトウェアゲイン増幅 → GeminiLiveClient.sendAudioChunk()
 
-Function Call (感情/ゲーム名/検索) → GamerViewModel.handleFunctionCall() → toolResponse返送
+Function Call (感情/ゲーム名/検索/音声コマンド) → GamerViewModel.handleFunctionCall() → toolResponse返送
 ```
 
 ### セッション管理
