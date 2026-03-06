@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.aigamerfriend.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +41,7 @@ class GeminiLiveClient(
     companion object {
         private const val TAG = "GeminiLiveClient"
         private const val BASE_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
+        private const val AUDIO_QUEUE_CAPACITY = 24
     }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
@@ -50,7 +52,10 @@ class GeminiLiveClient(
     private val _lastMessageTimeMs = MutableStateFlow(0L)
     val lastMessageTimeMs: StateFlow<Long> = _lastMessageTimeMs.asStateFlow()
 
-    val audioDataChannel = Channel<ByteArray>(Channel.UNLIMITED)
+    val audioDataChannel = Channel<ByteArray>(
+        capacity = AUDIO_QUEUE_CAPACITY,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
     var onFunctionCall: ((name: String, callId: String, args: Map<String, JsonElement>?) -> Unit)? = null
     var onGoAway: (() -> Unit)? = null
@@ -223,7 +228,9 @@ class GeminiLiveClient(
         )
 
         val sent = webSocket?.send(json.encodeToString(message)) ?: false
-        Log.d(TAG, "Sent audio chunk: ${audioData.size} bytes, success=$sent")
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Sent audio chunk: ${audioData.size} bytes, success=$sent")
+        }
     }
 
     fun sendVideoFrame(jpegBytes: ByteArray) {
@@ -242,7 +249,9 @@ class GeminiLiveClient(
         )
 
         val sent = webSocket?.send(json.encodeToString(message)) ?: false
-        Log.d(TAG, "Sent video frame: ${jpegBytes.size} bytes, success=$sent")
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Sent video frame: ${jpegBytes.size} bytes, success=$sent")
+        }
     }
 
     fun sendToolResponse(callId: String, name: String, result: Map<String, JsonElement>) {
@@ -260,7 +269,9 @@ class GeminiLiveClient(
 
         val jsonStr = json.encodeToString(message)
         val sent = webSocket?.send(jsonStr) ?: false
-        Log.d(TAG, "Sent tool response: callId=$callId, name=$name, success=$sent")
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Sent tool response: callId=$callId, name=$name, success=$sent")
+        }
     }
 
     fun disconnect() {

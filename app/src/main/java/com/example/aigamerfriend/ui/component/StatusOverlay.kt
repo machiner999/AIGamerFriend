@@ -48,8 +48,8 @@ internal fun statusOverlayInfo(state: SessionState, isDelayed: Boolean = false):
 @Composable
 fun StatusOverlay(
     state: SessionState,
-    isDelayed: Boolean = false,
     modifier: Modifier = Modifier,
+    isDelayed: Boolean = false,
 ) {
     val (dotColor, label) = statusOverlayInfo(state, isDelayed) ?: return
 

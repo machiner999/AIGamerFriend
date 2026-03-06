@@ -22,12 +22,18 @@ class AudioManager {
         private const val PLAYBACK_SAMPLE_RATE = 24000
         private const val RECORD_CHUNK_SIZE = 2048
         private const val PLAYBACK_BUFFER_MULTIPLIER = 4
+        private const val DEFAULT_GAIN_FACTOR = 2.0f
+        private const val MIN_GAIN_FACTOR = 1.0f
+        private const val MAX_GAIN_FACTOR = 6.0f
     }
 
     var onAudioDataAvailable: ((ByteArray) -> Unit)? = null
     var isMuted: Boolean = false
     var onAudioLevelUpdate: ((Float) -> Unit)? = null
-    var gainFactor: Float = 10.0f
+    var gainFactor: Float = DEFAULT_GAIN_FACTOR
+        set(value) {
+            field = value.coerceIn(MIN_GAIN_FACTOR, MAX_GAIN_FACTOR)
+        }
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null

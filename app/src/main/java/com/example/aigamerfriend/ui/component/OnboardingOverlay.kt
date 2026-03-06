@@ -23,7 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +40,7 @@ import kotlinx.coroutines.delay
 fun OnboardingOverlay(onDismiss: () -> Unit) {
     // Cycle through emotions for AIFace preview
     val emotions = listOf(Emotion.HAPPY, Emotion.EXCITED, Emotion.SURPRISED, Emotion.THINKING, Emotion.NEUTRAL)
-    var emotionIndex by remember { mutableStateOf(0) }
+    var emotionIndex by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(2000)

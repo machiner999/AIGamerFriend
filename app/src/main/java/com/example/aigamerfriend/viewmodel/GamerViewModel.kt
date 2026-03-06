@@ -24,6 +24,7 @@ import com.google.firebase.ai.type.content
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +95,10 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     private var retryCount = 0
 
     private val recentFrames = ArrayDeque<ByteArray>(MAX_RECENT_FRAMES)
+    private val latestFrameLock = Any()
+    private var latestFrame: Bitmap? = null
+    private val frameSignal = Channel<Unit>(Channel.CONFLATED)
+    private var frameSenderJob: Job? = null
 
     @VisibleForTesting
     internal var memoryStore: MemoryStore = MemoryStore(application.memoryDataStore)
@@ -467,11 +472,19 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.w(TAG, "Error stopping audio conversation", e)
         }
+        frameSenderJob?.cancel()
+        frameSenderJob = null
+        synchronized(latestFrameLock) {
+            latestFrame?.recycle()
+            latestFrame = null
+        }
         sessionHandle = null
         audioManager = null
         lastResumeToken = null
         retryCount = 0
-        recentFrames.clear()
+        synchronized(recentFrames) {
+            recentFrames.clear()
+        }
         _currentEmotion.value = Emotion.NEUTRAL
         _isMuted.value = false
         _audioLevel.value = 0f
@@ -482,27 +495,62 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendVideoFrame(frame: Bitmap) {
         val state = _sessionState.value
-        if (state !is SessionState.Connected) return
+        if (state !is SessionState.Connected) {
+            frame.recycle()
+            return
+        }
 
-        val handle = sessionHandle ?: return
+        if (sessionHandle == null) {
+            frame.recycle()
+            return
+        }
 
-        viewModelScope.launch {
-            try {
-                val stream = ByteArrayOutputStream(FRAME_BUFFER_SIZE)
-                frame.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
-                val jpegBytes = stream.toByteArray()
+        startFrameSenderLoopIfNeeded()
 
-                // Buffer frame for summary generation
-                if (recentFrames.size >= MAX_RECENT_FRAMES) {
-                    recentFrames.removeFirst()
+        val previousFrame = synchronized(latestFrameLock) {
+            val previous = latestFrame
+            latestFrame = frame
+            previous
+        }
+        previousFrame?.recycle()
+        if (frameSignal.trySend(Unit).isFailure) {
+            Log.w(TAG, "Frame signal dropped")
+        }
+    }
+
+    private fun startFrameSenderLoopIfNeeded() {
+        if (frameSenderJob?.isActive == true) return
+
+        frameSenderJob = viewModelScope.launch(Dispatchers.Default) {
+            val stream = ByteArrayOutputStream(FRAME_BUFFER_SIZE)
+            for (ignored in frameSignal) {
+                while (true) {
+                    val frameToSend = synchronized(latestFrameLock) {
+                        val frame = latestFrame
+                        latestFrame = null
+                        frame
+                    } ?: break
+
+                    try {
+                        val handle = sessionHandle ?: break
+                        stream.reset()
+                        frameToSend.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, stream)
+                        val jpegBytes = stream.toByteArray()
+
+                        synchronized(recentFrames) {
+                            if (recentFrames.size >= MAX_RECENT_FRAMES) {
+                                recentFrames.removeFirst()
+                            }
+                            recentFrames.addLast(jpegBytes.copyOf())
+                        }
+
+                        handle.sendVideoFrame(jpegBytes)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error sending video frame", e)
+                    } finally {
+                        frameToSend.recycle()
+                    }
                 }
-                recentFrames.addLast(jpegBytes.copyOf())
-
-                handle.sendVideoFrame(jpegBytes)
-            } catch (e: Exception) {
-                Log.w(TAG, "Error sending video frame", e)
-            } finally {
-                frame.recycle()
             }
         }
     }
@@ -566,7 +614,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun generateAndStoreSummary() {
-        val frames = recentFrames.toList()
+        val frames = synchronized(recentFrames) { recentFrames.toList() }
         if (frames.isEmpty()) return
 
         viewModelScope.launch {
