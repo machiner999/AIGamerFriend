@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## Communication
+- All user-facing responses must be in Japanese.
+- Code, commands, logs, and error messages may remain in original language (English).
+
 ## Project Structure & Module Organization
 Single-module Android app built with Kotlin + Jetpack Compose.
 - `app/src/main/java/com/example/aigamerfriend/`: application code
