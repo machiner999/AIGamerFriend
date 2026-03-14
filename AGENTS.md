@@ -1,67 +1,48 @@
 # Repository Guidelines
 
+## Purpose
+この文書は、Codex などのコーディングエージェントが最初に読む入口です。
+トップレベルの作業フロー、必須コマンド、参照先ドキュメントの構成が変わったときに更新します。
+
 ## Communication
 - All user-facing responses must be in Japanese.
-- Code, commands, logs, and error messages may remain in original language (English).
+- Code, commands, logs, and error messages may remain in English.
 
-## Project Structure & Module Organization
-Single-module Android app built with Kotlin + Jetpack Compose.
-- `app/src/main/java/com/example/aigamerfriend/`: application code
-- `app/src/main/java/.../ui/`: Compose UI (`screen/`, `component/`, `theme/`)
-- `app/src/main/java/.../data/`: WebSocket client, audio, and DataStore-backed state
-- `app/src/main/java/.../viewmodel/`: screen state and session orchestration
-- `app/src/test/java/com/example/aigamerfriend/`: JVM unit tests (no instrumented test folder currently)
-- `.github/workflows/ci.yml`: CI pipeline (lint + unit tests + release build)
+## First Read Order
+1. `AGENTS.md` (this file)
+2. `docs/change-guide.md`
+3. `docs/architecture.md` and `docs/verification.md` as needed
+4. `docs/agent-context.md` when product or implementation context is needed
 
-## Build, Test, and Development Commands
-Run from repository root:
-- `./gradlew assembleDebug`: build debug APK
-- `./gradlew assembleRelease`: build release APK (uses signing config if `keystore.properties` exists)
-- `./gradlew testDebugUnitTest`: run JVM unit tests
-- `./gradlew ktlintCheck`: Kotlin lint checks
-- `./gradlew ktlintFormat`: auto-format Kotlin sources
-- `./gradlew ktlintCheck testDebugUnitTest assembleRelease`: same sequence enforced in CI
+## Core Commands
+リポジトリルートで実行します。
+- `./gradlew assembleDebug`
+- `./gradlew assembleRelease`
+- `./gradlew testDebugUnitTest`
+- `./gradlew ktlintCheck`
+- `./gradlew ktlintFormat`
 
-## Coding Style & Naming Conventions
-- Follow `.editorconfig`: 4-space indentation, LF endings, UTF-8, max line length 120.
-- Kotlin naming: `PascalCase` for classes/objects, `camelCase` for functions/properties, `UPPER_SNAKE_CASE` for constants.
-- Test files should mirror production types (examples: `GamerViewModelTest.kt`, `AIFaceKtTest.kt`).
-- Use ktlint as the source of truth before opening a PR.
-- Branch naming: `feature/<topic>`, `fix/<topic>`, `docs/<topic>`, `chore/<topic>`.
+## Hard Constraints
+- 単一モジュールの Android アプリです。実装は Kotlin + Jetpack Compose 前提です。
+- 主なコードは `app/src/main/java/com/example/aigamerfriend/` 配下にあります。
+- 秘密情報はコミットしません。`GEMINI_API_KEY` は `local.properties` に置きます。
+- `app/google-services.json`、`keystore.properties`、`*.jks` はローカル専用です。
+- ローカル開発環境は Android SDK + JDK 17 前提です。
+- CI の確認列は `./gradlew ktlintCheck testDebugUnitTest lintDebug assembleRelease` です。
 
-## Testing Guidelines
-- Frameworks: JUnit 4, MockK, and `kotlinx-coroutines-test`.
-- Add tests for non-trivial ViewModel/data-layer changes and JVM-testable UI logic.
-- Prefer deterministic coroutine tests with controlled dispatchers.
-- For ViewModel behavior changes, include at least:
-  - one success-path test,
-  - one failure/edge-case test.
-- Run `./gradlew testDebugUnitTest` locally before pushing.
+## Definition Of Done
+- `./gradlew ktlintCheck` が通ること
+- `./gradlew testDebugUnitTest` が通ること
+- `./gradlew assembleDebug` が通ること
+- リリース影響のある変更では `./gradlew assembleRelease` も通ること
 
-## Commit & Pull Request Guidelines
-- Commit style in this repo follows Conventional Commit-like prefixes: `feat:`, `fix:`, `docs:`.
-- Keep commits focused and descriptive.
-- PR checklist:
-  - concise behavior summary,
-  - affected area(s) (`ui`, `viewmodel`, `data`, etc.),
-  - test evidence (exact commands run),
-  - linked issue (if applicable),
-  - screenshots/GIFs for UI changes.
-- Ensure CI passes on `main` targets (`ktlintCheck`, `testDebugUnitTest`, `assembleRelease`).
+## Detailed Docs
+- `docs/change-guide.md`: 変更判断の第一参照先。どこを触るか、何を避けるか、何を検証するかを決めます。
+- `docs/architecture.md`: レイヤ境界、状態遷移、主要データフローを確認します。
+- `docs/verification.md`: 変更種別ごとの実行コマンドと手動確認観点を確認します。
+- `docs/agent-context.md`: プロダクト概要、主要機能、現行の実装前提を確認します。
 
-## Security & Configuration Tips
-- Do not commit secrets. Keep `GEMINI_API_KEY` in `local.properties`.
-- Keep `app/google-services.json`, `keystore.properties`, and `*.jks` local only (already gitignored).
-
-## Setup Notes
-- Required local environment: Android SDK + JDK 17.
-- Minimum local config before build:
-  - `local.properties` with `GEMINI_API_KEY=...`
-  - `app/google-services.json` for Firebase features
-- Release signing is optional locally; config loads only when `keystore.properties` exists.
-
-## Definition of Done
-- Code is formatted/lint-clean: `./gradlew ktlintCheck`
-- Unit tests pass: `./gradlew testDebugUnitTest`
-- Build is healthy: `./gradlew assembleDebug` (and `assembleRelease` when release-related changes are included)
-- UI changes include updated screenshots/GIFs in the PR.
+## Human-Facing Docs
+- `README.md`: 開発者向けの概要、セットアップ、主要コマンド
+- `docs/user_guide.md` と `USER_GUIDE.md`: エンドユーザー向けの利用ガイド
+- `docs/PLAN.md`: 過去の実装計画書。現行の運用判断の正本ではありません
