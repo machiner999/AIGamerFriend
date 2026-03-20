@@ -1,7 +1,7 @@
 package com.example.aigamerfriend.data
 
-import android.util.Base64
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.example.aigamerfriend.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +20,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 enum class ConnectionState {
@@ -67,6 +68,11 @@ class GeminiLiveClient(
     private var client: OkHttpClient? = null
     private var scope: CoroutineScope? = null
 
+    @VisibleForTesting
+    internal fun setScopeForTest(scope: CoroutineScope) {
+        this.scope = scope
+    }
+
     fun connect(scope: CoroutineScope) {
         if (apiKey.isBlank()) {
             Log.e(TAG, "API key is empty")
@@ -91,25 +97,19 @@ class GeminiLiveClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleMessage(text)
+                processServerMessage(text)
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                handleMessage(bytes.utf8())
+                processServerMessage(bytes.utf8())
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (BuildConfig.DEBUG) {
-                    Log.e(TAG, "WebSocket failure: ${t.message} (response: ${response?.code} ${response?.message})", t)
-                }
-                _connectionState.value = ConnectionState.ERROR
+                handleSocketFailure(t, response)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closed: $code $reason")
-                if (_connectionState.value == ConnectionState.CONNECTED) {
-                    _connectionState.value = ConnectionState.DISCONNECTED
-                }
+                handleSocketClosed(code, reason)
             }
         })
     }
@@ -157,7 +157,8 @@ class GeminiLiveClient(
         if (BuildConfig.DEBUG) Log.d(TAG, "Setup message sent")
     }
 
-    private fun handleMessage(text: String) {
+    @VisibleForTesting
+    internal fun processServerMessage(text: String) {
         try {
             _lastMessageTimeMs.value = System.currentTimeMillis()
 
@@ -200,7 +201,7 @@ class GeminiLiveClient(
                     msg.serverContent.modelTurn?.parts?.forEach { part ->
                         part.inlineData?.let { inlineData ->
                             if (inlineData.mimeType.startsWith("audio/")) {
-                                val audioBytes = Base64.decode(inlineData.data, Base64.NO_WRAP)
+                                val audioBytes = Base64.getDecoder().decode(inlineData.data)
                                 audioDataChannel.trySend(audioBytes)
                             }
                         }
@@ -212,10 +213,26 @@ class GeminiLiveClient(
         }
     }
 
+    @VisibleForTesting
+    internal fun handleSocketFailure(t: Throwable, response: Response?) {
+        if (BuildConfig.DEBUG) {
+            Log.e(TAG, "WebSocket failure: ${t.message} (response: ${response?.code} ${response?.message})", t)
+        }
+        _connectionState.value = ConnectionState.ERROR
+    }
+
+    @VisibleForTesting
+    internal fun handleSocketClosed(code: Int, reason: String) {
+        Log.d(TAG, "WebSocket closed: $code $reason")
+        if (_connectionState.value == ConnectionState.CONNECTED) {
+            _connectionState.value = ConnectionState.DISCONNECTED
+        }
+    }
+
     fun sendAudioChunk(audioData: ByteArray) {
         if (_connectionState.value != ConnectionState.CONNECTED) return
 
-        val base64 = Base64.encodeToString(audioData, Base64.NO_WRAP)
+        val base64 = Base64.getEncoder().encodeToString(audioData)
         val message = GeminiRealtimeInputMessage(
             realtimeInput = GeminiRealtimeInputMessage.RealtimeInput(
                 mediaChunks = listOf(
@@ -236,7 +253,7 @@ class GeminiLiveClient(
     fun sendVideoFrame(jpegBytes: ByteArray) {
         if (_connectionState.value != ConnectionState.CONNECTED) return
 
-        val base64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+        val base64 = Base64.getEncoder().encodeToString(jpegBytes)
         val message = GeminiRealtimeInputMessage(
             realtimeInput = GeminiRealtimeInputMessage.RealtimeInput(
                 mediaChunks = listOf(

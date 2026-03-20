@@ -28,7 +28,7 @@
 - 秘密情報はコミットしません。`GEMINI_API_KEY` は `local.properties` に置きます。
 - `app/google-services.json`、`keystore.properties`、`*.jks` はローカル専用です。
 - ローカル開発環境は Android SDK + JDK 17 前提です。
-- CI の確認列は `./gradlew ktlintCheck testDebugUnitTest lintDebug assembleRelease` です。
+- CI の確認列は `./gradlew ktlintCheck testDebugUnitTest assembleDebug lintDebug assembleRelease` です。
 
 ## Definition Of Done
 - `./gradlew ktlintCheck` が通ること

@@ -54,4 +54,4 @@ jobs:
         run: echo "GEMINI_API_KEY=" >> local.properties
 
       - name: Lint, test, and build
-        run: ./gradlew ktlintCheck testDebugUnitTest lintDebug assembleRelease
+        run: ./gradlew ktlintCheck testDebugUnitTest assembleDebug lintDebug assembleRelease

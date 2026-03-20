@@ -55,6 +55,21 @@ internal interface SessionHandle {
     suspend fun sendVideoFrame(jpegBytes: ByteArray)
 }
 
+@VisibleForTesting
+internal sealed interface FunctionCallResult {
+    val responsePayload: Map<String, JsonElement>
+
+    data object Success : FunctionCallResult {
+        override val responsePayload: Map<String, JsonElement> =
+            mapOf("success" to JsonPrimitive(true))
+    }
+
+    data class Error(val message: String) : FunctionCallResult {
+        override val responsePayload: Map<String, JsonElement> =
+            mapOf("error" to JsonPrimitive(message))
+    }
+}
+
 @OptIn(PublicPreviewAPI::class)
 class GamerViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
@@ -312,13 +327,13 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         callId: String,
         args: Map<String, JsonElement>? = null,
-    ): String {
+    ): FunctionCallResult {
         val prefix = "setEmotion_"
         return when {
             name.startsWith(prefix) -> {
                 val emotionStr = name.removePrefix(prefix)
                 _currentEmotion.value = Emotion.fromString(emotionStr)
-                """{"success": true}"""
+                FunctionCallResult.Success
             }
             name == "setGameName" -> {
                 val gameName = args?.get("name")?.let { element ->
@@ -326,21 +341,21 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (gameName != null) {
                     _gameName.value = gameName
-                    """{"success": true}"""
+                    FunctionCallResult.Success
                 } else {
-                    """{"error": "Missing name argument"}"""
+                    FunctionCallResult.Error("Missing name argument")
                 }
             }
             name == "stopSession" -> {
                 viewModelScope.launch { stopSession() }
-                """{"success": true}"""
+                FunctionCallResult.Success
             }
             name == "toggleMute" -> {
                 toggleMute()
-                """{"success": true}"""
+                FunctionCallResult.Success
             }
             else -> {
-                """{"error": "Unknown function: $name"}"""
+                FunctionCallResult.Error("Unknown function: $name")
             }
         }
     }
@@ -374,12 +389,7 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
         // Set up function call handler
         liveClient.onFunctionCall = { name, callId, args ->
             val result = handleFunctionCall(name, callId, args)
-            val resultMap = if (result.contains("success")) {
-                mapOf<String, JsonElement>("success" to JsonPrimitive(true))
-            } else {
-                mapOf<String, JsonElement>("error" to JsonPrimitive("Unknown function: $name"))
-            }
-            liveClient.sendToolResponse(callId, name, resultMap)
+            liveClient.sendToolResponse(callId, name, result.responsePayload)
         }
 
         // Set up GoAway handler — server signals imminent disconnect (~10min)

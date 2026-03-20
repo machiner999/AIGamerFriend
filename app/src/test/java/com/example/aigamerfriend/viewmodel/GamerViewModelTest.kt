@@ -274,7 +274,10 @@ class GamerViewModelTest {
         val response = viewModel.handleFunctionCall("unknownFunction", "call-2")
         // Emotion should not change
         assertEquals(Emotion.HAPPY, viewModel.currentEmotion.value)
-        assertTrue(response.contains("error"))
+        assertEquals(
+            FunctionCallResult.Error("Unknown function: unknownFunction"),
+            response,
+        )
     }
 
     @Test
@@ -339,7 +342,7 @@ class GamerViewModelTest {
     fun `handleFunctionCall setGameName with null args does not crash`() {
         val result = viewModel.handleFunctionCall("setGameName", "call-1", null)
         assertNull(viewModel.gameName.value)
-        assertTrue(result.contains("error"))
+        assertEquals(FunctionCallResult.Error("Missing name argument"), result)
     }
 
     @Test
@@ -361,7 +364,18 @@ class GamerViewModelTest {
 
         val result = viewModel.handleFunctionCall("toggleMute", "call-1")
         assertTrue(viewModel.isMuted.value)
-        assertTrue(result.contains("success"))
+        assertEquals(FunctionCallResult.Success, result)
+    }
+
+    @Test
+    fun `handleFunctionCall setGameName success returns structured payload`() {
+        val result = viewModel.handleFunctionCall(
+            "setGameName",
+            "call-1",
+            mapOf("name" to JsonPrimitive("Zelda")),
+        )
+
+        assertEquals(FunctionCallResult.Success, result)
     }
 
     @Test
