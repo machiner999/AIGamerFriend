@@ -95,7 +95,7 @@ sealed interface SessionState {
 
 **LiveModel初期化**:
 - `Firebase.ai(backend = GenerativeBackend.googleAI()).liveModel(...)`
-- モデル: `gemini-2.5-flash-native-audio-preview-12-2025`
+- モデル: `gemini-live-2.5-flash-native-audio`
 - `responseModality = ResponseModality.AUDIO`
 - `speechConfig = SpeechConfig(voice = Voice("AOEDE"))` — 暖かみのある声
 

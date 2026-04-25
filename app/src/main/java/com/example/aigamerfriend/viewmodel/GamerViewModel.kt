@@ -74,7 +74,7 @@ internal sealed interface FunctionCallResult {
 class GamerViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "GamerViewModel"
-        private const val MODEL_NAME = "gemini-2.5-flash-native-audio-preview-12-2025"
+        private const val MODEL_NAME = "gemini-live-2.5-flash-native-audio"
         private const val SUMMARY_MODEL_NAME = "gemini-2.5-flash"
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
