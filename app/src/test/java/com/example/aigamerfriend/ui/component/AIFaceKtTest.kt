@@ -94,4 +94,32 @@ class AIFaceKtTest {
         val neutral = paramsFor(Emotion.NEUTRAL)
         assertTrue("EXCITED browY should be lower than NEUTRAL", excited.browY < neutral.browY)
     }
+
+    @Test
+    fun `all emotion styles stay within renderable ranges`() {
+        Emotion.entries.forEach { emotion ->
+            val style = styleFor(emotion)
+            assertTrue("${emotion.name} energy should be in range", style.energy in 0f..1f)
+            assertTrue("${emotion.name} tension should be in range", style.tension in 0f..1f)
+            assertTrue("${emotion.name} ringSpeed should be positive", style.ringSpeed > 0f)
+            assertTrue("${emotion.name} particleCount should be positive", style.particleCount > 0)
+            assertTrue("${emotion.name} particleSpread should be positive", style.particleSpread > 0f)
+        }
+    }
+
+    @Test
+    fun `EXCITED has highest energy style`() {
+        val excitedEnergy = styleFor(Emotion.EXCITED).energy
+        Emotion.entries.filter { it != Emotion.EXCITED }.forEach { emotion ->
+            assertTrue(
+                "EXCITED energy ($excitedEnergy) should be >= ${emotion.name} energy (${styleFor(emotion).energy})",
+                excitedEnergy >= styleFor(emotion).energy,
+            )
+        }
+    }
+
+    @Test
+    fun `WORRIED has higher tension than HAPPY`() {
+        assertTrue(styleFor(Emotion.WORRIED).tension > styleFor(Emotion.HAPPY).tension)
+    }
 }
