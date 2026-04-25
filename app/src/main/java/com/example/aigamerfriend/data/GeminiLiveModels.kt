@@ -18,10 +18,19 @@ data class GeminiSetupMessage(
         @SerialName("system_instruction")
         val systemInstruction: SystemInstruction? = null,
         val tools: List<Tool>? = null,
+        @SerialName("enable_affective_dialog")
+        val enableAffectiveDialog: Boolean? = null,
+        val proactivity: Proactivity? = null,
         @SerialName("contextWindowCompression")
         val contextWindowCompression: ContextWindowCompression? = null,
         @SerialName("sessionResumption")
         val sessionResumption: SessionResumption? = null,
+    )
+
+    @Serializable
+    data class Proactivity(
+        @SerialName("proactive_audio")
+        val proactiveAudio: Boolean,
     )
 
     @Serializable

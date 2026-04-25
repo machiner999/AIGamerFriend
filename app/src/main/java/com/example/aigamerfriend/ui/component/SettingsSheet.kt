@@ -52,6 +52,10 @@ fun SettingsBottomSheet(
     onReactionIntensityChange: (String) -> Unit,
     autoStart: Boolean,
     onAutoStartChange: (Boolean) -> Unit,
+    enableAffectiveDialog: Boolean,
+    onAffectiveDialogChange: (Boolean) -> Unit,
+    enableProactiveAudio: Boolean,
+    onProactiveAudioChange: (Boolean) -> Unit,
     onClearMemory: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -184,6 +188,70 @@ fun SettingsBottomSheet(
                 Switch(
                     checked = autoStart,
                     onCheckedChange = onAutoStartChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = NeonGreen,
+                    ),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassPanel(shape = sectionShape, bgAlpha = 0.3f, borderAlpha = 0.06f)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "感情に合わせた話し方",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "声のトーンや感情表現に合わせて返事しやすくする",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                    )
+                }
+                Switch(
+                    checked = enableAffectiveDialog,
+                    onCheckedChange = onAffectiveDialogChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = NeonGreen,
+                    ),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassPanel(shape = sectionShape, bgAlpha = 0.3f, borderAlpha = 0.06f)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "必要な時だけ返事する（試験的）",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "独り言や周囲の音への反応を減らす代わりに、返事が少なくなることがある",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                    )
+                }
+                Switch(
+                    checked = enableProactiveAudio,
+                    onCheckedChange = onProactiveAudioChange,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
                         checkedTrackColor = NeonGreen,

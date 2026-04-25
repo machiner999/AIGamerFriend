@@ -128,6 +128,8 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
     val voiceName by viewModel.voiceName.collectAsStateWithLifecycle()
     val reactionIntensity by viewModel.reactionIntensity.collectAsStateWithLifecycle()
     val autoStart by viewModel.autoStart.collectAsStateWithLifecycle()
+    val enableAffectiveDialog by viewModel.enableAffectiveDialog.collectAsStateWithLifecycle()
+    val enableProactiveAudio by viewModel.enableProactiveAudio.collectAsStateWithLifecycle()
     var hasPermissions by remember { mutableStateOf(PermissionHelper.hasAllPermissions(context)) }
     var showSettings by remember { mutableStateOf(false) }
 
@@ -360,6 +362,10 @@ fun GamerScreen(viewModel: GamerViewModel = viewModel()) {
             onReactionIntensityChange = { viewModel.setReactionIntensity(it) },
             autoStart = autoStart,
             onAutoStartChange = { viewModel.setAutoStart(it) },
+            enableAffectiveDialog = enableAffectiveDialog,
+            onAffectiveDialogChange = { viewModel.setAffectiveDialog(it) },
+            enableProactiveAudio = enableProactiveAudio,
+            onProactiveAudioChange = { viewModel.setProactiveAudio(it) },
             onClearMemory = { viewModel.clearMemory() },
             onDismiss = { showSettings = false },
         )

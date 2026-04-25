@@ -8,6 +8,7 @@ import com.example.aigamerfriend.data.SettingsStore
 import com.example.aigamerfriend.model.Emotion
 import com.example.aigamerfriend.settingsDataStore
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -69,6 +70,8 @@ class GamerViewModelTest {
         every { mockSettingsStore.voiceNameFlow() } returns flowOf("AOEDE")
         every { mockSettingsStore.reactionIntensityFlow() } returns flowOf("ふつう")
         every { mockSettingsStore.autoStartFlow() } returns flowOf(false)
+        every { mockSettingsStore.affectiveDialogFlow() } returns flowOf(true)
+        every { mockSettingsStore.proactiveAudioFlow() } returns flowOf(false)
 
         // Mock the settingsDataStore extension property so the ViewModel init doesn't crash
         val mockDataStore = mockk<DataStore<Preferences>>(relaxed = true)
@@ -368,6 +371,30 @@ class GamerViewModelTest {
     }
 
     @Test
+    fun `settings flows populate affective dialog and proactive audio`() {
+        assertTrue(viewModel.enableAffectiveDialog.value)
+        assertFalse(viewModel.enableProactiveAudio.value)
+    }
+
+    @Test
+    fun `setAffectiveDialog persists setting`() =
+        viewModelTest {
+            viewModel.setAffectiveDialog(false)
+            testScheduler.runCurrent()
+
+            coVerify { viewModel.settingsStore.setAffectiveDialog(false) }
+        }
+
+    @Test
+    fun `setProactiveAudio persists setting`() =
+        viewModelTest {
+            viewModel.setProactiveAudio(true)
+            testScheduler.runCurrent()
+
+            coVerify { viewModel.settingsStore.setProactiveAudio(true) }
+        }
+
+    @Test
     fun `handleFunctionCall setGameName success returns structured payload`() {
         val result = viewModel.handleFunctionCall(
             "setGameName",
@@ -388,6 +415,8 @@ class GamerViewModelTest {
             every { mockSettingsStore2.voiceNameFlow() } returns flowOf("AOEDE")
             every { mockSettingsStore2.reactionIntensityFlow() } returns flowOf("ふつう")
             every { mockSettingsStore2.autoStartFlow() } returns flowOf(false)
+            every { mockSettingsStore2.affectiveDialogFlow() } returns flowOf(true)
+            every { mockSettingsStore2.proactiveAudioFlow() } returns flowOf(false)
             viewModel.settingsStore = mockSettingsStore2
 
             // Re-trigger init check manually (since init already ran)

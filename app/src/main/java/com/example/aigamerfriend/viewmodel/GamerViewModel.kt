@@ -141,6 +141,12 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
     private val _autoStart = MutableStateFlow(false)
     val autoStart: StateFlow<Boolean> = _autoStart.asStateFlow()
 
+    private val _enableAffectiveDialog = MutableStateFlow(true)
+    val enableAffectiveDialog: StateFlow<Boolean> = _enableAffectiveDialog.asStateFlow()
+
+    private val _enableProactiveAudio = MutableStateFlow(false)
+    val enableProactiveAudio: StateFlow<Boolean> = _enableProactiveAudio.asStateFlow()
+
     private var settingsLoadJob: Job? = null
 
     init {
@@ -178,6 +184,20 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
                     Log.w(TAG, "Failed to read auto start", e)
                 }
             }
+            launch {
+                try {
+                    store.affectiveDialogFlow().collect { _enableAffectiveDialog.value = it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read affective dialog", e)
+                }
+            }
+            launch {
+                try {
+                    store.proactiveAudioFlow().collect { _enableProactiveAudio.value = it }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to read proactive audio", e)
+                }
+            }
         }
     }
 
@@ -191,6 +211,14 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoStart(enabled: Boolean) {
         viewModelScope.launch { settingsStore.setAutoStart(enabled) }
+    }
+
+    fun setAffectiveDialog(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setAffectiveDialog(enabled) }
+    }
+
+    fun setProactiveAudio(enabled: Boolean) {
+        viewModelScope.launch { settingsStore.setProactiveAudio(enabled) }
     }
 
     fun clearMemory() {
@@ -377,6 +405,8 @@ class GamerViewModel(application: Application) : AndroidViewModel(application) {
             systemInstruction = systemPrompt,
             tools = liveTools,
             voiceName = voiceName.value,
+            enableAffectiveDialog = enableAffectiveDialog.value,
+            enableProactiveAudio = enableProactiveAudio.value,
             enableCompression = true,
             resumeHandle = resumeToken,
         )

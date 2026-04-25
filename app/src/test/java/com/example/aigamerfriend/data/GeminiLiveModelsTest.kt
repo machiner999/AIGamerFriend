@@ -132,6 +132,39 @@ class GeminiLiveModelsTest {
     }
 
     @Test
+    fun `setup message with affective dialog serializes correctly`() {
+        val setup = GeminiSetupMessage(
+            setup = GeminiSetupMessage.Setup(
+                model = "models/test-model",
+                generationConfig = GeminiSetupMessage.GenerationConfig(
+                    responseModalities = listOf("AUDIO"),
+                ),
+                enableAffectiveDialog = true,
+            ),
+        )
+
+        val encoded = json.encodeToString(setup)
+        assertTrue("Should contain enable_affective_dialog", encoded.contains("\"enable_affective_dialog\":true"))
+    }
+
+    @Test
+    fun `setup message with proactive audio serializes correctly`() {
+        val setup = GeminiSetupMessage(
+            setup = GeminiSetupMessage.Setup(
+                model = "models/test-model",
+                generationConfig = GeminiSetupMessage.GenerationConfig(
+                    responseModalities = listOf("AUDIO"),
+                ),
+                proactivity = GeminiSetupMessage.Proactivity(proactiveAudio = true),
+            ),
+        )
+
+        val encoded = json.encodeToString(setup)
+        assertTrue("Should contain proactivity", encoded.contains("\"proactivity\""))
+        assertTrue("Should contain proactive_audio", encoded.contains("\"proactive_audio\":true"))
+    }
+
+    @Test
     fun `setup message with session resumption handle serializes correctly`() {
         val setup = GeminiSetupMessage(
             setup = GeminiSetupMessage.Setup(

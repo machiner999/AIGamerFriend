@@ -15,6 +15,8 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
         private val KEY_VOICE_NAME = stringPreferencesKey("voice_name")
         private val KEY_REACTION_INTENSITY = stringPreferencesKey("reaction_intensity")
         private val KEY_AUTO_START = booleanPreferencesKey("auto_start")
+        private val KEY_AFFECTIVE_DIALOG = booleanPreferencesKey("affective_dialog")
+        private val KEY_PROACTIVE_AUDIO = booleanPreferencesKey("proactive_audio")
     }
 
     suspend fun isOnboardingShown(): Boolean =
@@ -43,5 +45,19 @@ class SettingsStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setAutoStart(enabled: Boolean) {
         dataStore.edit { it[KEY_AUTO_START] = enabled }
+    }
+
+    fun affectiveDialogFlow(): Flow<Boolean> =
+        dataStore.data.map { it[KEY_AFFECTIVE_DIALOG] ?: true }
+
+    suspend fun setAffectiveDialog(enabled: Boolean) {
+        dataStore.edit { it[KEY_AFFECTIVE_DIALOG] = enabled }
+    }
+
+    fun proactiveAudioFlow(): Flow<Boolean> =
+        dataStore.data.map { it[KEY_PROACTIVE_AUDIO] ?: false }
+
+    suspend fun setProactiveAudio(enabled: Boolean) {
+        dataStore.edit { it[KEY_PROACTIVE_AUDIO] = enabled }
     }
 }

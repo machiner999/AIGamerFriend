@@ -36,6 +36,8 @@ class GeminiLiveClient(
     private val systemInstruction: String,
     private val tools: List<GeminiSetupMessage.Tool>,
     private val voiceName: String = "AOEDE",
+    private val enableAffectiveDialog: Boolean = true,
+    private val enableProactiveAudio: Boolean = false,
     private val enableCompression: Boolean = true,
     private val resumeHandle: String? = null,
 ) {
@@ -146,6 +148,12 @@ class GeminiLiveClient(
                     parts = listOf(GeminiSetupMessage.Part(text = systemInstruction)),
                 ),
                 tools = tools.ifEmpty { null },
+                enableAffectiveDialog = enableAffectiveDialog,
+                proactivity = if (enableProactiveAudio) {
+                    GeminiSetupMessage.Proactivity(proactiveAudio = true)
+                } else {
+                    null
+                },
                 contextWindowCompression = compression,
                 sessionResumption = sessionResumption,
             ),

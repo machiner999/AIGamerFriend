@@ -76,4 +76,26 @@ class SettingsStoreTest {
         store.setAutoStart(true)
         assertTrue(store.autoStartFlow().first())
     }
+
+    @Test
+    fun `default affective dialog is true`() = runSettingsTest { store ->
+        assertTrue(store.affectiveDialogFlow().first())
+    }
+
+    @Test
+    fun `setAffectiveDialog updates flow`() = runSettingsTest { store ->
+        store.setAffectiveDialog(false)
+        assertFalse(store.affectiveDialogFlow().first())
+    }
+
+    @Test
+    fun `default proactive audio is false`() = runSettingsTest { store ->
+        assertFalse(store.proactiveAudioFlow().first())
+    }
+
+    @Test
+    fun `setProactiveAudio updates flow`() = runSettingsTest { store ->
+        store.setProactiveAudio(true)
+        assertTrue(store.proactiveAudioFlow().first())
+    }
 }
